@@ -37,28 +37,37 @@ static const uint8_t POWER_OFF = 0x01;
 static const uint8_t POWER_ON = 0x02;
 
 // Mode values (register 0x02)
-static const uint8_t MODE_COOL_AUTO = 0x01;
+static const uint8_t MODE_COOL = 0x01;
 static const uint8_t MODE_HEAT = 0x02;
 static const uint8_t MODE_FAN = 0x03;
 static const uint8_t MODE_ECO = 0x04;
 static const uint8_t MODE_SLEEP = 0x05;
 static const uint8_t MODE_TURBO = 0x06;
-static const uint8_t MODE_VENT_TOGGLE = 0x08;
+static const uint8_t MODE_DRY = 0x07;
+static const uint8_t MODE_VENT = 0x08;
 
 // Swing values
 static const uint8_t SWING_OFF = 0x01;
 static const uint8_t SWING_ON = 0x02;
 
-// Temperature limits (°F)
-static const uint8_t TEMP_MIN_F = 61;
+// Temperature limits
+// Celsius: 17-30°C, Fahrenheit: 63-86°F
+// Device stores in whichever unit is active on its display
+static const float TEMP_MIN_C = 17.0f;
+static const float TEMP_MAX_C = 30.0f;
+static const uint8_t TEMP_MIN_F = 63;
 static const uint8_t TEMP_MAX_F = 86;
+
+// Command timing (from community integration)
+static const uint32_t AC_COMMAND_INTERVAL_MS = 400;
+static const uint32_t AC_RESPONSE_TIMEOUT_MS = 3000;
 
 // Polling registers in order
 static const uint8_t POLL_REGISTERS[] = {
     REG_POWER, REG_MODE, REG_SETPOINT, REG_FAN_SPEED,
-    REG_AMBIENT, REG_SETPOINT, REG_STATUS, REG_SWING
+    REG_AMBIENT, REG_STATUS, REG_SWING
 };
-static const uint8_t POLL_REGISTER_COUNT = 8;
+static const uint8_t POLL_REGISTER_COUNT = 7;
 
 class VelitACClimate;
 class VelitSwingSwitch;
@@ -140,7 +149,7 @@ class VelitAC : public PollingComponent, public ble_client::BLEClientNode {
   };
   std::vector<PendingCommand> command_queue_;
   uint32_t last_command_ms_{0};
-  static const uint32_t COMMAND_THROTTLE_MS = 200;
+  static const uint32_t COMMAND_THROTTLE_MS = 400;  // AC requires 400ms min between commands
 };
 
 // Climate entity that delegates to VelitAC

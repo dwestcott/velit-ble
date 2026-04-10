@@ -279,7 +279,7 @@ void VelitAC::publish_state_() {
     } else {
       // Map Velit mode register to HA climate mode + preset
       switch (this->mode_state_) {
-        case MODE_COOL_AUTO:
+        case MODE_COOL:
           this->climate_->mode = climate::CLIMATE_MODE_COOL;
           this->climate_->preset = climate::CLIMATE_PRESET_NONE;
           break;
@@ -302,6 +302,10 @@ void VelitAC::publish_state_() {
         case MODE_TURBO:
           this->climate_->mode = climate::CLIMATE_MODE_COOL;
           this->climate_->preset = climate::CLIMATE_PRESET_BOOST;
+          break;
+        case MODE_DRY:
+          this->climate_->mode = climate::CLIMATE_MODE_DRY;
+          this->climate_->preset = climate::CLIMATE_PRESET_NONE;
           break;
         default:
           this->climate_->mode = climate::CLIMATE_MODE_COOL;
@@ -375,7 +379,7 @@ void VelitAC::set_swing(bool on) {
 
 void VelitAC::vent_toggle() {
   ESP_LOGI(TAG, "Toggling vent (momentary)");
-  this->command_queue_.push_back({REG_MODE, MODE_VENT_TOGGLE});
+  this->command_queue_.push_back({REG_MODE, MODE_VENT});
 }
 
 
@@ -401,6 +405,7 @@ climate::ClimateTraits VelitACClimate::traits() {
       climate::CLIMATE_MODE_COOL,
       climate::CLIMATE_MODE_HEAT,
       climate::CLIMATE_MODE_FAN_ONLY,
+      climate::CLIMATE_MODE_DRY,
   });
 
   // Supported presets (ECO, SLEEP, TURBO mapped to BOOST)
@@ -439,7 +444,7 @@ void VelitACClimate::control(const climate::ClimateCall &call) {
         if (!this->parent_->is_powered_on()) {
           this->parent_->set_power(true);
         }
-        this->parent_->set_mode(MODE_COOL_AUTO);
+        this->parent_->set_mode(MODE_COOL);
         break;
       case climate::CLIMATE_MODE_HEAT:
         if (!this->parent_->is_powered_on()) {
@@ -452,6 +457,12 @@ void VelitACClimate::control(const climate::ClimateCall &call) {
           this->parent_->set_power(true);
         }
         this->parent_->set_mode(MODE_FAN);
+        break;
+      case climate::CLIMATE_MODE_DRY:
+        if (!this->parent_->is_powered_on()) {
+          this->parent_->set_power(true);
+        }
+        this->parent_->set_mode(MODE_DRY);
         break;
       default:
         break;
@@ -467,7 +478,7 @@ void VelitACClimate::control(const climate::ClimateCall &call) {
     }
     switch (preset) {
       case climate::CLIMATE_PRESET_NONE:
-        this->parent_->set_mode(MODE_COOL_AUTO);
+        this->parent_->set_mode(MODE_COOL);
         break;
       case climate::CLIMATE_PRESET_ECO:
         this->parent_->set_mode(MODE_ECO);
