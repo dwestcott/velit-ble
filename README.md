@@ -2,7 +2,7 @@
 
 Custom ESPHome components for controlling [Velit](https://velitcamping.com) camping HVAC products via Bluetooth Low Energy, enabling remote control through Home Assistant over WiFi/VPN.
 
-Protocols were reverse-engineered from Bluetooth packet captures and validated against the [community HA integration](https://www.fordtransitusaforum.com/threads/looking-for-testers-homeassistant-integration-for-velit-a-c.107318/).
+Protocols were reverse-engineered from Bluetooth packet captures and validated against the community Home Assistant integration by [John Freeborg](https://github.com/JohnFreeborg) ([forum thread](https://www.fordtransitusaforum.com/threads/looking-for-testers-homeassistant-integration-for-velit-a-c.107318/)).
 
 ## Supported Devices
 

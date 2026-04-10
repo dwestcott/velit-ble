@@ -1,7 +1,8 @@
 # Velit BLE Protocol Specification
 
 Reverse-engineered from Bluetooth packet captures and validated against the
-community Home Assistant integration (velit-hass v0.0.1).
+community Home Assistant integration (velit-hass v0.0.1) by
+[John Freeborg](https://github.com/JohnFreeborg).
 
 Both the Velit 3000R AC and diesel heater use the same GATT service but
 **completely different application-layer protocols**.
