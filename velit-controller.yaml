@@ -1,0 +1,107 @@
+esphome:
+  name: velit-controller
+  friendly_name: "Velit BLE Controller"
+
+esp32:
+  board: esp32-c6-devkitc-1
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # Optional: use a static IP for reliability
+  # manual_ip:
+  #   static_ip: 192.168.1.100
+  #   gateway: 192.168.1.1
+  #   subnet: 255.255.255.0
+
+  ap:
+    ssid: "Velit Controller"
+    password: !secret ap_password
+
+captive_portal:
+
+# Load the custom Velit AC component from local directory
+external_components:
+  - source:
+      type: local
+      path: components
+
+# BLE client connection to the Velit AC unit
+esp32_ble_tracker:
+  scan_parameters:
+    active: true
+
+ble_client:
+  - mac_address: "ED:EC:58:F5:55:5D"
+    id: velit_ac_ble
+
+# Velit AC controller component (polls every 6 seconds to match stock app)
+velit_ac:
+  id: velit_ac_controller
+  ble_client_id: velit_ac_ble
+  update_interval: 6s
+
+# Climate entity — main control interface in HA
+climate:
+  - platform: velit_ac
+    id: velit_ac_climate
+    name: "Velit AC"
+    velit_ac_id: velit_ac_controller
+
+# Swing switch — supplementary control
+switch:
+  - platform: velit_ac
+    id: velit_swing
+    name: "Velit AC Swing"
+    icon: "mdi:arrow-oscillating"
+    velit_ac_id: velit_ac_controller
+
+# Vent toggle button — momentary action
+button:
+  - platform: template
+    name: "Velit AC Vent"
+    icon: "mdi:air-filter"
+    on_press:
+      - lambda: |-
+          id(velit_ac_controller).vent_toggle();
+
+# Ambient temperature as a standalone sensor (also shown in climate entity)
+sensor:
+  - platform: template
+    name: "Velit AC Ambient Temperature"
+    id: velit_ambient_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(velit_ac_controller).get_ambient_temp_c();
+
+  # WiFi signal strength (useful for debugging connectivity)
+  - platform: wifi_signal
+    name: "Velit Controller WiFi Signal"
+    update_interval: 60s
+
+# BLE connection status
+binary_sensor:
+  - platform: ble_client
+    ble_client_id: velit_ac_ble
+    name: "Velit AC BLE Connected"
+    device_class: connectivity

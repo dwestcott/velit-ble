@@ -1,0 +1,19 @@
+# ESPHome build artifacts
+.esphome/
+.pioenvs/
+.piolibdeps/
+
+# Secrets — never commit
+secrets.yaml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
