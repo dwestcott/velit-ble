@@ -36,35 +36,56 @@ wifi:
 
 captive_portal:
 
-# Load the custom Velit AC component from local directory
+# Sync time for heater clock sync and HA timestamps
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# Load custom Velit components from local directory
 external_components:
   - source:
       type: local
       path: components
 
-# BLE client connection to the Velit AC unit
+# BLE scanner
 esp32_ble_tracker:
   scan_parameters:
     active: true
+
+# =============================================================================
+# BLE Client Connections
+# =============================================================================
+# Update MAC addresses to match your devices.
+# Find them with nRF Connect or ESPHome BLE tracker logs.
+# Velit devices advertise as "VELIT", "VLIT", or "D30".
 
 ble_client:
   - mac_address: "ED:EC:58:F5:55:5D"
     id: velit_ac_ble
 
-# Velit AC controller component (polls every 6 seconds to match stock app)
+  - mac_address: "XX:XX:XX:XX:XX:XX"  # ← Replace with your heater's MAC
+    id: velit_heater_ble
+
+# =============================================================================
+# VELIT 3000R AIR CONDITIONER
+# =============================================================================
+
 velit_ac:
   id: velit_ac_controller
   ble_client_id: velit_ac_ble
   update_interval: 6s
 
-# Climate entity — main control interface in HA
 climate:
   - platform: velit_ac
     id: velit_ac_climate
     name: "Velit AC"
     velit_ac_id: velit_ac_controller
 
-# Swing switch — supplementary control
+  - platform: velit_heater
+    id: velit_heater_climate
+    name: "Velit Heater"
+    velit_heater_id: velit_heater_controller
+
 switch:
   - platform: velit_ac
     id: velit_swing
@@ -72,7 +93,6 @@ switch:
     icon: "mdi:arrow-oscillating"
     velit_ac_id: velit_ac_controller
 
-# Vent toggle button — momentary action
 button:
   - platform: template
     name: "Velit AC Vent"
@@ -81,11 +101,38 @@ button:
       - lambda: |-
           id(velit_ac_controller).vent_toggle();
 
-# Ambient temperature as a standalone sensor (also shown in climate entity)
+  - platform: template
+    name: "Velit Heater Ventilation Start"
+    icon: "mdi:fan"
+    on_press:
+      - lambda: |-
+          id(velit_heater_controller).start_ventilation();
+
+  - platform: template
+    name: "Velit Heater Ventilation Stop"
+    icon: "mdi:fan-off"
+    on_press:
+      - lambda: |-
+          id(velit_heater_controller).stop_ventilation();
+
+# =============================================================================
+# VELIT DIESEL HEATER
+# =============================================================================
+
+velit_heater:
+  id: velit_heater_controller
+  ble_client_id: velit_heater_ble
+  update_interval: 5s
+
+# =============================================================================
+# SENSORS
+# =============================================================================
+
 sensor:
+  # --- AC Sensors ---
   - platform: template
     name: "Velit AC Ambient Temperature"
-    id: velit_ambient_temp
+    id: velit_ac_ambient_temp
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -94,14 +141,110 @@ sensor:
     lambda: |-
       return id(velit_ac_controller).get_ambient_temp_c();
 
-  # WiFi signal strength (useful for debugging connectivity)
+  # --- Heater Sensors ---
+  - platform: template
+    name: "Velit Heater Voltage"
+    id: velit_heater_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      return id(velit_heater_controller).get_voltage();
+
+  - platform: template
+    name: "Velit Heater Fan RPM"
+    id: velit_heater_fan_rpm
+    unit_of_measurement: "RPM"
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:fan"
+    update_interval: 10s
+    lambda: |-
+      return id(velit_heater_controller).get_fan_rpm();
+
+  - platform: template
+    name: "Velit Heater Inlet Temperature"
+    id: velit_heater_inlet_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      return id(velit_heater_controller).get_inlet_temp_c();
+
+  - platform: template
+    name: "Velit Heater Altitude"
+    id: velit_heater_altitude
+    unit_of_measurement: "ft"
+    state_class: measurement
+    accuracy_decimals: 0
+    icon: "mdi:altimeter"
+    update_interval: 30s
+    lambda: |-
+      return id(velit_heater_controller).get_altitude();
+
+  # --- System ---
   - platform: wifi_signal
     name: "Velit Controller WiFi Signal"
     update_interval: 60s
+
+# Text sensors for fault and machine state
+text_sensor:
+  - platform: template
+    name: "Velit Heater Fault"
+    id: velit_heater_fault
+    icon: "mdi:alert-circle"
+    update_interval: 10s
+    lambda: |-
+      uint8_t fault = id(velit_heater_controller).get_fault();
+      switch (fault) {
+        case 0: return std::string("No Fault");
+        case 1: return std::string("Ignition Failure");
+        case 2: return std::string("Abnormal Flame Out");
+        case 3: return std::string("Voltage Deviation");
+        case 4: return std::string("Heat Exchanger Temp");
+        case 5: return std::string("Ignition Sensor");
+        case 6: return std::string("Outlet Temp Sensor");
+        case 7: return std::string("Fuel Pump");
+        case 8: return std::string("Fan Fault");
+        case 9: return std::string("Inlet Temp Sensor");
+        case 10: return std::string("Glow Plug");
+        case 11: return std::string("Ambient Temp Anomaly");
+        case 12: return std::string("Altitude Out of Range");
+        case 13: return std::string("Fan Blockage");
+        case 14: return std::string("CO Exceeded");
+        case 15: return std::string("LIN Communication");
+        default: return std::string("Unknown");
+      }
+
+  - platform: template
+    name: "Velit Heater State"
+    id: velit_heater_state
+    icon: "mdi:fire"
+    update_interval: 10s
+    lambda: |-
+      uint8_t state = id(velit_heater_controller).get_machine_state();
+      switch (state) {
+        case 0: return std::string("Standby");
+        case 1: return std::string("Normal");
+        case 2: return std::string("Cooling Down");
+        case 3: return std::string("Overtemp Standby");
+        case 4: return std::string("Cleaning");
+        case 5: return std::string("Clean Complete");
+        default: return std::string("Unknown");
+      }
 
 # BLE connection status
 binary_sensor:
   - platform: ble_client
     ble_client_id: velit_ac_ble
     name: "Velit AC BLE Connected"
+    device_class: connectivity
+
+  - platform: ble_client
+    ble_client_id: velit_heater_ble
+    name: "Velit Heater BLE Connected"
     device_class: connectivity
