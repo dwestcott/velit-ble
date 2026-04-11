@@ -8,8 +8,8 @@ Protocols were reverse-engineered from Bluetooth packet captures and validated a
 
 | Device | Status | Component |
 |--------|--------|-----------|
-| Velit 3000R Air Conditioner | ✅ Ready | `velit_ac` |
-| Velit Diesel Heater | ✅ Ready | `velit_heater` |
+| Velit 3000R Air Conditioner | ✅ Tested | `velit_ac` |
+| Velit Diesel Heater | ✅ Tested | `velit_heater` |
 
 ## Architecture
 
@@ -28,11 +28,15 @@ A single ESP32 board placed within BLE range of your Velit units bridges WiFi to
 
 ## Quick Start
 
-1. Copy `secrets.yaml.example` to `secrets.yaml` and fill in your WiFi credentials
+1. Copy `secrets.yaml.example` to `secrets.yaml` and fill in your WiFi credentials and device MAC addresses
 2. Install ESPHome: `pip install esphome`
-3. Update the `mac_address` entries in `velit-controller.yaml` to match your devices
-4. Compile and flash: `esphome run velit-controller.yaml`
-5. Add the device in Home Assistant
+3. Compile and flash: `esphome run velit-controller.yaml`
+4. Add the device in Home Assistant
+
+> **Note:** If using ESPHome 2026.x on macOS via Homebrew, you may need to install missing build dependencies into the ESPHome virtualenv:
+> ```
+> /opt/homebrew/Cellar/esphome/*/libexec/bin/python -m pip install littlefs-python "fatfs-ng>=0.1.14"
+> ```
 
 ## Finding Your Device MAC Addresses
 
@@ -61,7 +65,7 @@ Use nRF Connect or check ESPHome BLE tracker logs. Velit devices advertise as `V
 | `Velit AC Swing` | Switch | Swing vane on/off |
 | `Velit AC Vent` | Button | Momentary vent toggle |
 | `Velit AC Ambient Temperature` | Sensor | Ambient °C |
-| `Velit AC BLE Connected` | Binary Sensor | BLE link status |
+| `Velit AC BLE Connected` | Binary Sensor | GATT connection status |
 
 ### Heater Supplementary Entities
 | Entity | Type | Description |
@@ -73,7 +77,7 @@ Use nRF Connect or check ESPHome BLE tracker logs. Velit devices advertise as `V
 | `Velit Heater Fault` | Text Sensor | Active fault name |
 | `Velit Heater State` | Text Sensor | Machine state (Standby/Normal/Cooling Down/etc.) |
 | `Velit Heater Ventilation Start/Stop` | Buttons | Fan without combustion |
-| `Velit Heater BLE Connected` | Binary Sensor | BLE link status |
+| `Velit Heater BLE Connected` | Binary Sensor | GATT connection status |
 
 ### Heater Fault Codes
 | Code | Fault | Code | Fault |

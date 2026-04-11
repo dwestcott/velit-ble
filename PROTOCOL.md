@@ -94,6 +94,7 @@ Byte:   0     1     2     3     4     5     6     7     8
 - **Master Address:** `00 00 00 01` (fixed, device ignores)
 - **Slave Address:** `00 00 00 2D` (fixed constant on all Velit heaters)
 - **`53 46`:** Manufacturer code "SF" (present in all responses)
+- **Data field:** Always **2 bytes** for single-value commands: `[value, 0x00]`. The device silently ignores commands with only 1 data byte.
 - **Write checksum:** 1 byte — `sum(all preceding bytes) & 0xFF`
 - **Response checksum:** 2 bytes — `sum(all preceding bytes) & 0xFFFF` (big-endian)
 
