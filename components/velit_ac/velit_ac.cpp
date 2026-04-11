@@ -322,12 +322,12 @@ void VelitAC::publish_state_() {
 
     // --- Fan mode ---
     switch (this->fan_speed_) {
-      case 1: this->climate_->custom_fan_mode = "1"; break;
-      case 2: this->climate_->custom_fan_mode = "2"; break;
-      case 3: this->climate_->custom_fan_mode = "3"; break;
-      case 4: this->climate_->custom_fan_mode = "4"; break;
-      case 5: this->climate_->custom_fan_mode = "5"; break;
-      default: this->climate_->custom_fan_mode = "Auto"; break;
+      case 1: this->climate_->set_custom_fan_mode_("1"); break;
+      case 2: this->climate_->set_custom_fan_mode_("2"); break;
+      case 3: this->climate_->set_custom_fan_mode_("3"); break;
+      case 4: this->climate_->set_custom_fan_mode_("4"); break;
+      case 5: this->climate_->set_custom_fan_mode_("5"); break;
+      default: break;
     }
 
     // --- Swing ---
@@ -394,7 +394,7 @@ void VelitACClimate::dump_config() {
 climate::ClimateTraits VelitACClimate::traits() {
   auto traits = climate::ClimateTraits();
 
-  traits.set_supports_current_temperature(true);
+  traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   traits.set_visual_min_temperature(16.1f);   // 61°F in °C
   traits.set_visual_max_temperature(30.0f);   // 86°F in °C
   traits.set_visual_temperature_step(0.5f);   // ~1°F steps
@@ -503,8 +503,8 @@ void VelitACClimate::control(const climate::ClimateCall &call) {
   }
 
   // Handle custom fan mode
-  if (call.get_custom_fan_mode().has_value()) {
-    auto fan_mode = *call.get_custom_fan_mode();
+  if (call.has_custom_fan_mode()) {
+    auto fan_mode = call.get_custom_fan_mode();
     uint8_t speed = 0;
     if (fan_mode == "1") speed = 1;
     else if (fan_mode == "2") speed = 2;

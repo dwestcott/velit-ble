@@ -130,7 +130,7 @@ class VelitAC : public PollingComponent, public ble_client::BLEClientNode {
 
   // Device state (from notifications)
   uint8_t power_state_{POWER_OFF};
-  uint8_t mode_state_{MODE_COOL_AUTO};
+  uint8_t mode_state_{MODE_COOL};
   uint8_t setpoint_f_{68};
   uint8_t fan_speed_{2};
   float ambient_c_{0.0f};

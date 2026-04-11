@@ -441,12 +441,12 @@ void VelitHeater::publish_state_() {
 
   // Fan mode (gear)
   switch (this->current_gear_) {
-    case 1: this->climate_->custom_fan_mode = "1"; break;
-    case 2: this->climate_->custom_fan_mode = "2"; break;
-    case 3: this->climate_->custom_fan_mode = "3"; break;
-    case 4: this->climate_->custom_fan_mode = "4"; break;
-    case 5: this->climate_->custom_fan_mode = "5"; break;
-    default: this->climate_->custom_fan_mode = "Auto"; break;
+    case 1: this->climate_->set_custom_fan_mode_("1"); break;
+    case 2: this->climate_->set_custom_fan_mode_("2"); break;
+    case 3: this->climate_->set_custom_fan_mode_("3"); break;
+    case 4: this->climate_->set_custom_fan_mode_("4"); break;
+    case 5: this->climate_->set_custom_fan_mode_("5"); break;
+    default: break;
   }
 
   this->climate_->publish_state();
@@ -517,7 +517,7 @@ void VelitHeaterClimate::dump_config() {
 climate::ClimateTraits VelitHeaterClimate::traits() {
   auto traits = climate::ClimateTraits();
 
-  traits.set_supports_current_temperature(true);
+  traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   traits.set_visual_min_temperature(HEATER_TEMP_MIN_C);
   traits.set_visual_max_temperature(HEATER_TEMP_MAX_C);
   traits.set_visual_temperature_step(1.0f);
@@ -579,8 +579,8 @@ void VelitHeaterClimate::control(const climate::ClimateCall &call) {
     this->parent_->set_target_temp_f(temp_f);
   }
 
-  if (call.get_custom_fan_mode().has_value()) {
-    auto fan_mode = *call.get_custom_fan_mode();
+  if (call.has_custom_fan_mode()) {
+    auto fan_mode = call.get_custom_fan_mode();
     uint8_t gear = 0;
     if (fan_mode == "1") gear = 1;
     else if (fan_mode == "2") gear = 2;
