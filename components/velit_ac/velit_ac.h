@@ -85,8 +85,14 @@ class VelitAC : public PollingComponent, public ble_client::BLEClientNode {
   float get_setup_priority() const override { return setup_priority::AFTER_BLUETOOTH; }
 
   // Entity setters (called from Python config)
-  void set_climate(VelitACClimate *climate) { this->climate_ = climate; }
-  void set_swing_switch(VelitSwingSwitch *sw) { this->swing_switch_ = sw; }
+  void set_climate(VelitACClimate *climate) {
+    this->climate_ = climate;
+    climate->set_parent(this);
+  }
+  void set_swing_switch(VelitSwingSwitch *sw) {
+    this->swing_switch_ = sw;
+    sw->set_parent(this);
+  }
 
   // Control methods (called from climate/switch entities)
   void set_power(bool on);
