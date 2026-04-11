@@ -60,10 +60,10 @@ esp32_ble_tracker:
 # Velit devices advertise as "VELIT", "VLIT", or "D30".
 
 ble_client:
-  - mac_address: "ED:EC:58:F5:55:5D"
+  - mac_address: !secret velit_ac_mac
     id: velit_ac_ble
 
-  - mac_address: "C8:47:80:5F:F4:9B"
+  - mac_address: !secret velit_heater_mac
     id: velit_heater_ble
 
 # =============================================================================
