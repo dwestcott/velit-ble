@@ -16,6 +16,11 @@ void VelitHeater::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Velit Heater BLE controller...");
 }
 
+void VelitHeater::set_climate(VelitHeaterClimate *climate) {
+  this->climate_ = climate;
+  climate->set_parent(this);
+}
+
 void VelitHeater::dump_config() {
   ESP_LOGCONFIG(TAG, "Velit Heater BLE Controller:");
   ESP_LOGCONFIG(TAG, "  Write Handle: 0x%04X", this->write_handle_);

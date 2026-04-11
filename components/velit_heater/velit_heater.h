@@ -111,11 +111,8 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
 
   float get_setup_priority() const override { return setup_priority::AFTER_BLUETOOTH; }
 
-  // Entity setters
-  void set_climate(VelitHeaterClimate *climate) {
-    this->climate_ = climate;
-    climate->set_parent(this);
-  }
+  // Entity setters (implemented in .cpp)
+  void set_climate(VelitHeaterClimate *climate);
   void set_voltage_sensor(sensor::Sensor *s) { this->voltage_sensor_ = s; }
   void set_fan_rpm_sensor(sensor::Sensor *s) { this->fan_rpm_sensor_ = s; }
   void set_inlet_temp_sensor(sensor::Sensor *s) { this->inlet_temp_sensor_ = s; }

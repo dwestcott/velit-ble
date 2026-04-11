@@ -14,6 +14,16 @@ void VelitAC::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Velit AC BLE controller...");
 }
 
+void VelitAC::set_climate(VelitACClimate *climate) {
+  this->climate_ = climate;
+  climate->set_parent(this);
+}
+
+void VelitAC::set_swing_switch(VelitSwingSwitch *sw) {
+  this->swing_switch_ = sw;
+  sw->set_parent(this);
+}
+
 void VelitAC::dump_config() {
   ESP_LOGCONFIG(TAG, "Velit AC BLE Controller:");
   ESP_LOGCONFIG(TAG, "  Write Handle: 0x%04X", this->write_handle_);
