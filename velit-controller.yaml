@@ -63,7 +63,7 @@ ble_client:
   - mac_address: "ED:EC:58:F5:55:5D"
     id: velit_ac_ble
 
-  - mac_address: "XX:XX:XX:XX:XX:XX"  # ← Replace with your heater's MAC
+  - mac_address: "C8:47:80:5F:F4:9B"
     id: velit_heater_ble
 
 # =============================================================================

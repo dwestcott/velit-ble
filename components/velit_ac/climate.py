@@ -6,9 +6,8 @@ from . import VelitAC, CONF_VELIT_AC_ID, velit_ac_ns
 
 VelitACClimate = velit_ac_ns.class_("VelitACClimate", climate.Climate, cg.Component)
 
-CONFIG_SCHEMA = climate.CLIMATE_SCHEMA.extend(
+CONFIG_SCHEMA = climate.climate_schema(VelitACClimate).extend(
     {
-        cv.GenerateID(): cv.declare_id(VelitACClimate),
         cv.GenerateID(CONF_VELIT_AC_ID): cv.use_id(VelitAC),
     }
 ).extend(cv.COMPONENT_SCHEMA)

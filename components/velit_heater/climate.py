@@ -8,9 +8,8 @@ VelitHeaterClimate = velit_heater_ns.class_(
     "VelitHeaterClimate", climate.Climate, cg.Component
 )
 
-CONFIG_SCHEMA = climate.CLIMATE_SCHEMA.extend(
+CONFIG_SCHEMA = climate.climate_schema(VelitHeaterClimate).extend(
     {
-        cv.GenerateID(): cv.declare_id(VelitHeaterClimate),
         cv.GenerateID(CONF_VELIT_HEATER_ID): cv.use_id(VelitHeater),
     }
 ).extend(cv.COMPONENT_SCHEMA)
