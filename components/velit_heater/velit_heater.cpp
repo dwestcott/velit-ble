@@ -190,7 +190,9 @@ void VelitHeater::send_command_(uint8_t func, const uint8_t *data, uint8_t data_
 }
 
 void VelitHeater::send_command_(uint8_t func, uint8_t value) {
-  send_command_(func, &value, 1);
+  // Velit protocol requires 2-byte data field: [value, 0x00]
+  uint8_t data[2] = {value, 0x00};
+  send_command_(func, data, 2);
 }
 
 void VelitHeater::send_clock_sync_() {
