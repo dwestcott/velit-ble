@@ -131,6 +131,7 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   void stop_ventilation();
 
   // State getters
+  bool is_connected() const { return this->handles_discovered_ && this->notifications_enabled_; }
   bool is_running() const { return machine_state_ == STATE_NORMAL; }
   uint8_t get_mode() const { return work_mode_; }
   uint8_t get_gear() const { return current_gear_; }

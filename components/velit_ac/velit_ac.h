@@ -97,6 +97,7 @@ class VelitAC : public PollingComponent, public ble_client::BLEClientNode {
   void vent_toggle();
 
   // State getters
+  bool is_connected() const { return this->handles_discovered_ && this->notifications_enabled_; }
   bool is_powered_on() const { return power_state_ == POWER_ON; }
   uint8_t get_mode() const { return mode_state_; }
   uint8_t get_target_temp_f() const { return setpoint_f_; }
