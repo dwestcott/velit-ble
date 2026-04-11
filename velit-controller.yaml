@@ -237,14 +237,14 @@ text_sensor:
         default: return std::string("Unknown");
       }
 
-# BLE connection status
+# BLE connection status (ble_presence uses advertisement detection)
 binary_sensor:
-  - platform: ble_client
-    ble_client_id: velit_ac_ble
-    name: "Velit AC BLE Connected"
+  - platform: ble_presence
+    name: "Velit AC BLE Present"
+    mac_address: !secret velit_ac_mac
     device_class: connectivity
 
-  - platform: ble_client
-    ble_client_id: velit_heater_ble
-    name: "Velit Heater BLE Connected"
+  - platform: ble_presence
+    name: "Velit Heater BLE Present"
+    mac_address: !secret velit_heater_mac
     device_class: connectivity
