@@ -475,41 +475,41 @@ void VelitHeater::publish_state_() {
 
 void VelitHeater::startup_manual() {
   ESP_LOGI(TAG, "Starting heater (manual mode)");
-  this->command_queue_.push_back({FUNC_STARTUP, {0x01}});
+  this->command_queue_.push_back({FUNC_STARTUP, {0x01, 0x00}});
 }
 
 void VelitHeater::shutdown() {
   ESP_LOGI(TAG, "Shutting down heater");
-  this->command_queue_.push_back({FUNC_SHUTDOWN, {0x00}});
+  this->command_queue_.push_back({FUNC_SHUTDOWN, {0x00, 0x00}});
 }
 
 void VelitHeater::set_mode(uint8_t mode) {
   ESP_LOGI(TAG, "Setting mode: %s", mode == MODE_THERMOSTAT ? "Thermostat" : "Manual");
-  this->command_queue_.push_back({FUNC_SET_MODE, {mode}});
+  this->command_queue_.push_back({FUNC_SET_MODE, {mode, 0x00}});
 }
 
 void VelitHeater::set_gear(uint8_t gear) {
   if (gear < 1) gear = 1;
   if (gear > 5) gear = 5;
   ESP_LOGI(TAG, "Setting gear: %d", gear);
-  this->command_queue_.push_back({FUNC_SET_GEAR, {gear}});
+  this->command_queue_.push_back({FUNC_SET_GEAR, {gear, 0x00}});
 }
 
 void VelitHeater::set_target_temp_f(uint8_t temp_f) {
   if (temp_f < HEATER_TEMP_MIN_F) temp_f = HEATER_TEMP_MIN_F;
   if (temp_f > HEATER_TEMP_MAX_F) temp_f = HEATER_TEMP_MAX_F;
   ESP_LOGI(TAG, "Setting target temp: %d°F", temp_f);
-  this->command_queue_.push_back({FUNC_SET_TEMP, {temp_f}});
+  this->command_queue_.push_back({FUNC_SET_TEMP, {temp_f, 0x00}});
 }
 
 void VelitHeater::start_ventilation() {
   ESP_LOGI(TAG, "Starting ventilation");
-  this->command_queue_.push_back({FUNC_START_VENT, {0x00}});
+  this->command_queue_.push_back({FUNC_START_VENT, {0x00, 0x00}});
 }
 
 void VelitHeater::stop_ventilation() {
   ESP_LOGI(TAG, "Stopping ventilation");
-  this->command_queue_.push_back({FUNC_STOP_VENT, {0x00}});
+  this->command_queue_.push_back({FUNC_STOP_VENT, {0x00, 0x00}});
 }
 
 
