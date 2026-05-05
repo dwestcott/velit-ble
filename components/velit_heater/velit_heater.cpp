@@ -512,6 +512,21 @@ void VelitHeater::stop_ventilation() {
   this->command_queue_.push_back({FUNC_STOP_VENT, {0x00, 0x00}});
 }
 
+void VelitHeater::start_fuel_prime() {
+  ESP_LOGI(TAG, "Starting fuel prime (30s auto-stop)");
+  this->command_queue_.push_back({FUNC_START_PRIME, {0x00, 0x00}});
+}
+
+void VelitHeater::stop_fuel_prime() {
+  ESP_LOGI(TAG, "Stopping fuel prime");
+  this->command_queue_.push_back({FUNC_STOP_PRIME, {0x00, 0x00}});
+}
+
+void VelitHeater::start_cleaning() {
+  ESP_LOGI(TAG, "Starting cleaning cycle (cannot be manually stopped)");
+  this->command_queue_.push_back({FUNC_CLEANING, {0x00, 0x00}});
+}
+
 
 // ============================================================================
 // VelitHeaterClimate — HA Climate entity

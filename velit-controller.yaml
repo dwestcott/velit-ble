@@ -115,6 +115,32 @@ button:
       - lambda: |-
           id(velit_heater_controller).stop_ventilation();
 
+  # Fuel prime — runs the fuel pump for 30s without ignition.
+  # Useful for bleeding air after fuel filter / glow plug service, or
+  # confirming fuel delivery before an ignition attempt. Auto-stops at 30s.
+  - platform: template
+    name: "Velit Heater Fuel Prime Start"
+    icon: "mdi:fuel"
+    on_press:
+      - lambda: |-
+          id(velit_heater_controller).start_fuel_prime();
+
+  - platform: template
+    name: "Velit Heater Fuel Prime Stop"
+    icon: "mdi:fuel-cell"
+    on_press:
+      - lambda: |-
+          id(velit_heater_controller).stop_fuel_prime();
+
+  # Cleaning cycle — high-temp burnoff to clear carbon. Runs at 100% gear
+  # until complete (5–15 min). Cannot be manually stopped per protocol.
+  - platform: template
+    name: "Velit Heater Cleaning Cycle"
+    icon: "mdi:broom"
+    on_press:
+      - lambda: |-
+          id(velit_heater_controller).start_cleaning();
+
 # =============================================================================
 # VELIT DIESEL HEATER
 # =============================================================================
@@ -236,6 +262,19 @@ text_sensor:
         case 5: return std::string("Clean Complete");
         default: return std::string("Unknown");
       }
+
+  # Current work mode (Manual vs Thermostat). Settable via climate preset
+  # ("None" = Manual, "Home" = Thermostat) but not visible from there —
+  # this exposes it as a readable text sensor for dashboards/automations.
+  - platform: template
+    name: "Velit Heater Mode"
+    id: velit_heater_mode
+    icon: "mdi:cog"
+    update_interval: 10s
+    lambda: |-
+      uint8_t m = id(velit_heater_controller).get_mode();
+      // 1 = Manual, 2 = Thermostat (per protocol)
+      return std::string(m == 2 ? "Thermostat" : "Manual");
 
 # BLE connection status
 # Note: ble_presence won't work here — connected devices stop advertising.

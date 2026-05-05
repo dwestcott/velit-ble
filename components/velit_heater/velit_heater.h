@@ -129,6 +129,9 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   void set_target_temp_f(uint8_t temp_f);
   void start_ventilation();
   void stop_ventilation();
+  void start_fuel_prime();
+  void stop_fuel_prime();
+  void start_cleaning();
 
   // State getters
   bool is_connected() const { return this->handles_discovered_ && this->notifications_enabled_; }
