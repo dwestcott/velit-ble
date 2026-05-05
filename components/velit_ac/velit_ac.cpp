@@ -426,10 +426,8 @@ climate::ClimateTraits VelitACClimate::traits() {
       climate::CLIMATE_PRESET_BOOST,
   });
 
-  // Fan speeds 1-5
-  traits.set_supported_custom_fan_modes({
-      "1", "2", "3", "4", "5"
-  });
+  // Fan speeds 1-5 are registered on the Climate entity in setup() (per
+  // ESPHome 2026.11+ API) — ClimateTraits will pick them up automatically.
 
   // Swing support
   traits.set_supported_swing_modes({

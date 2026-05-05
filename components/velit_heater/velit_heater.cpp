@@ -555,8 +555,8 @@ climate::ClimateTraits VelitHeaterClimate::traits() {
       climate::CLIMATE_PRESET_HOME,   // Thermostat mode
   });
 
-  // Gear levels 1-5
-  traits.set_supported_custom_fan_modes({"1", "2", "3", "4", "5"});
+  // Gear levels 1-5 are registered on the Climate entity in setup() (per
+  // ESPHome 2026.11+ API) — ClimateTraits will pick them up automatically.
 
   return traits;
 }

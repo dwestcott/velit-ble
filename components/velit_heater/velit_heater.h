@@ -226,7 +226,12 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
 // Climate entity for the heater
 class VelitHeaterClimate : public climate::Climate, public Component {
  public:
-  void setup() override {}
+  // Register supported custom fan modes here (rather than in traits()) per
+  // ESPHome 2026.11+ API: set_supported_custom_fan_modes() lives on the
+  // Climate entity, ClimateTraits just references the stored list.
+  void setup() override {
+    this->set_supported_custom_fan_modes({"1", "2", "3", "4", "5"});
+  }
   void dump_config() override;
 
   void set_parent(VelitHeater *parent) { this->parent_ = parent; }
