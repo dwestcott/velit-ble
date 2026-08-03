@@ -48,7 +48,7 @@ Use nRF Connect or check ESPHome BLE tracker logs. Velit devices advertise as `V
 - **Modes:** Off, Cool, Heat, Fan Only, Dry
 - **Presets:** None, ECO, Sleep, Boost (TURBO)
 - **Fan Speeds:** 1–5
-- **Swing:** Off, Vertical
+- **Swing:** Off, Vertical *(mapping corrected in v0.3.2 — it was inverted; see [PROTOCOL.md § Swing](PROTOCOL.md#swing-0x10))*
 - **Temperature Range:** 17–30°C (63–86°F)
 - **Current Temperature:** Ambient sensor reading
 
@@ -62,7 +62,9 @@ Use nRF Connect or check ESPHome BLE tracker logs. Velit devices advertise as `V
 ### AC Supplementary Entities
 | Entity | Type | Description |
 |--------|------|-------------|
-| `Velit AC Swing` | Switch | Swing vane on/off |
+| `Velit AC Swing` | Switch | Swing vane oscillation on/off |
+| `Velit AC Swing Jog` | Button | Pulses swing on→off to **aim** the vanes. Tap repeatedly to walk them into position |
+| `Velit AC Swing Jog Duration` | Number | Jog pulse length, 400–3000 ms (default 600). Values under 400 ms are clamped by the AC's command throttle |
 | `Velit AC Vent` | Button | Momentary vent toggle |
 | `Velit AC Ambient Temperature` | Sensor | Ambient °C |
 | `Velit AC BLE Connected` | Binary Sensor | GATT connection status |

@@ -93,7 +93,36 @@ switch:
     icon: "mdi:arrow-oscillating"
     velit_ac_id: velit_ac_controller
 
+# Swing jog pulse length. The AC enforces COMMAND_THROTTLE_MS = 400ms between
+# commands, so anything below 400 is clamped by the component — the effective
+# pulse is max(this value, 400ms). Tune to taste once you've seen how fast your
+# vanes sweep: shorter = finer aiming, longer = fewer taps.
+number:
+  - platform: template
+    name: "Velit AC Swing Jog Duration"
+    id: velit_swing_jog_ms
+    icon: "mdi:timer-cog-outline"
+    optimistic: true
+    restore_value: true
+    initial_value: 600
+    min_value: 400
+    max_value: 3000
+    step: 100
+    unit_of_measurement: "ms"
+    entity_category: config
+
 button:
+  # Nudge the swing vanes. There is no position command in the protocol — the
+  # vanes oscillate while swing is ON and freeze in place when it goes OFF, so
+  # aiming them means pulsing. Tap repeatedly to walk them to where you want.
+  - platform: template
+    name: "Velit AC Swing Jog"
+    icon: "mdi:arrow-up-down"
+    on_press:
+      - switch.turn_on: velit_swing
+      - delay: !lambda "return (uint32_t) id(velit_swing_jog_ms).state;"
+      - switch.turn_off: velit_swing
+
   - platform: template
     name: "Velit AC Vent"
     icon: "mdi:air-filter"

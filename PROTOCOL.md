@@ -49,7 +49,7 @@ Byte:   0     1     2     3     4     5     6     7     8
 | `0x04` | Fan Speed | R/W | 1-5 | TURBO auto-sets to 5 |
 | `0x07` | Ambient Temp | R | °C value (read-only) | |
 | `0x0B` | Fault Info | R | Raw fault data | Format unconfirmed |
-| `0x10` | Swing | R/W | `0x01`=OFF, `0x02`=ON | |
+| `0x10` | Swing | R/W | **`0x01`=ON, `0x02`=OFF** | ⚠️ Corrected 2026-08-03 — previously documented (and coded) the other way round. Hardware-verified on a 3000R: `0x01` starts the vanes oscillating. See [Swing](#swing-0x10) |
 
 ### AC Mode Values (Register 0x02)
 
@@ -63,6 +63,33 @@ Byte:   0     1     2     3     4     5     6     7     8
 | `0x06` | Turbo | Max cooling, auto-sets fan to 5 |
 | `0x07` | Dehumidify | Dry mode |
 | `0x08` | Vent | Alternate ventilation |
+
+### Swing (0x10)
+
+The 3000R has two vanes on each side of the outlet that oscillate up and down.
+The register is a **plain on/off oscillation control — there is no position
+command.** The vanes sweep continuously while ON and freeze wherever they
+happen to be when you send OFF.
+
+| Value | Meaning |
+|-------|---------|
+| `0x01` | **ON** — vanes oscillate |
+| `0x02` | **OFF** — vanes stop where they are |
+
+> ⚠️ **These were inverted** in this doc and in `velit_ac.h` before 2026-08-03.
+> Corrected after hardware testing on a Velit 3000R.
+
+**Positioning the vanes ("jog").** Because OFF freezes them in place, you aim the
+vanes by pulsing: send ON, wait, send OFF. **The minimum useful pulse is bounded
+by `COMMAND_THROTTLE_MS` (400 ms)** — the AC rejects commands closer together
+than that, so an OFF queued sooner than 400 ms after the ON is simply held until
+the throttle expires. Effective pulse length is therefore
+`max(requested_delay, 400 ms)`.
+
+This also caps how precise a "hold to move, release to stop" control can be:
+release is always at least one throttle window (~400 ms of vane travel) behind
+the button, so expect some overshoot. A repeated short jog is more predictable
+than a hold gesture.
 
 ### AC Polling
 

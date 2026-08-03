@@ -47,8 +47,20 @@ static const uint8_t MODE_DRY = 0x07;
 static const uint8_t MODE_VENT = 0x08;
 
 // Swing values
-static const uint8_t SWING_OFF = 0x01;
-static const uint8_t SWING_ON = 0x02;
+//
+// CORRECTED 2026-08-03 (hardware-verified on a Velit 3000R): these were
+// inverted. Selecting "Vertical" in the climate UI stopped the vanes and
+// selecting "Off" started them oscillating, and the reported state was wrong
+// in the same direction.
+//
+// The command path and the feedback path both read these same two constants
+// (set_swing() -> SWING_ON/SWING_OFF, and parse -> is_swing_on()), so the code
+// was internally consistent and only the mapping to the hardware was wrong.
+// Swapping the two VALUES fixes the command direction and the reported state
+// together. Do NOT "fix" this by inverting inside set_swing() — that corrects
+// the command but leaves the feedback backwards.
+static const uint8_t SWING_ON = 0x01;
+static const uint8_t SWING_OFF = 0x02;
 
 // Temperature limits
 // Celsius: 17-30°C, Fahrenheit: 63-86°F
