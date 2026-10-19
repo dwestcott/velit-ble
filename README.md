@@ -54,7 +54,7 @@ Use nRF Connect or check ESPHome BLE tracker logs. Velit devices advertise as `V
 
 ### Climate — `Velit Heater`
 - **Modes:** Off, Heat, Fan Only (ventilation)
-- **Presets:** None (Manual), Home (Thermostat)
+- **Presets:** Manual, Thermostat (custom presets since v0.5.4; were None/Home)
 - **Fan/Gear:** 1–5
 - **Temperature Range:** 4–37°C (40–99°F)
 - **Current Temperature:** Inlet sensor reading; blank after 60 s without a valid reply

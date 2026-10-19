@@ -518,9 +518,6 @@ void VelitHeater::publish_state_() {
     action = climate::CLIMATE_ACTION_IDLE;  // Overtemp Standby, Clean Complete
   }
 
-  climate::ClimatePreset preset = (this->work_mode_ == MODE_THERMOSTAT)
-      ? climate::CLIMATE_PRESET_HOME    // "Thermostat"
-      : climate::CLIMATE_PRESET_NONE;   // "Manual"
 
   float target = this->fahrenheit_mode_
       ? (static_cast<float>(this->set_temp_raw_) - 32.0f) * 5.0f / 9.0f
@@ -532,7 +529,7 @@ void VelitHeater::publish_state_() {
     return (std::isnan(a) && std::isnan(b)) || a == b;
   };
   if (this->published_once_ && this->climate_->mode == mode &&
-      this->climate_->action == action && this->climate_->preset == preset &&
+      this->climate_->action == action && this->published_work_mode_ == this->work_mode_ &&
       same(this->climate_->target_temperature, target) &&
       same(this->climate_->current_temperature, current) &&
       this->published_gear_ == this->current_gear_)
@@ -540,7 +537,8 @@ void VelitHeater::publish_state_() {
 
   this->climate_->mode = mode;
   this->climate_->action = action;
-  this->climate_->preset = preset;
+  this->climate_->set_custom_preset_(this->work_mode_ == MODE_THERMOSTAT ? "Thermostat" : "Manual");
+  this->published_work_mode_ = this->work_mode_;
   this->climate_->target_temperature = target;
   this->climate_->current_temperature = current;
 
@@ -656,10 +654,7 @@ climate::ClimateTraits VelitHeaterClimate::traits() {
       climate::CLIMATE_MODE_FAN_ONLY,
   });
 
-  traits.set_supported_presets({
-      climate::CLIMATE_PRESET_NONE,   // Manual mode
-      climate::CLIMATE_PRESET_HOME,   // Thermostat mode
-  });
+  // Presets "Manual" / "Thermostat" are custom, registered in setup()
 
   // Gear levels 1-5 are registered on the Climate entity in setup() (per
   // ESPHome 2026.11+ API) — ClimateTraits will pick them up automatically.
@@ -687,6 +682,16 @@ void VelitHeaterClimate::control(const climate::ClimateCall &call) {
     }
   }
 
+  if (call.has_custom_preset()) {
+    auto preset = call.get_custom_preset();
+    if (preset == "Thermostat") {
+      this->parent_->set_mode(MODE_THERMOSTAT);
+    } else if (preset == "Manual") {
+      this->parent_->set_mode(MODE_MANUAL);
+    }
+  }
+
+  // Stock presets from before v0.5.4 (NONE = Manual, HOME = Thermostat)
   if (call.get_preset().has_value()) {
     auto preset = *call.get_preset();
     switch (preset) {

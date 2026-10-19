@@ -236,6 +236,7 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   bool state_received_{false};
   bool published_once_{false};
   uint8_t published_gear_{0};
+  uint8_t published_work_mode_{0};
 
   // Child entities
   VelitHeaterClimate *climate_{nullptr};
@@ -260,6 +261,9 @@ class VelitHeaterClimate : public climate::Climate, public Component {
   // Climate entity, ClimateTraits just references the stored list.
   void setup() override {
     this->set_supported_custom_fan_modes({"1", "2", "3", "4", "5"});
+    // Named presets instead of the stock NONE/HOME, which read as "none" and
+    // "home" in HA and hid that they mean Manual and Thermostat.
+    this->set_supported_custom_presets({"Manual", "Thermostat"});
   }
   void dump_config() override;
 
