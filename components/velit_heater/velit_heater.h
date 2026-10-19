@@ -198,6 +198,8 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   bool notifications_enabled_{false};
   bool clock_synced_{false};
   bool firmware_requested_{false};
+  uint8_t firmware_tries_{0};
+  uint32_t firmware_query_ms_{0};
   std::string firmware_version_;
   std::string firmware_reply_;
 

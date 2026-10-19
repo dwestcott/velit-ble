@@ -157,7 +157,7 @@ than a hold gesture.
 | `0x0A` | Status Query | `0x00` | 7 bytes |
 | `0x0B` | Sensor Query | `0x00` | 13 bytes |
 | `0x0F` | Timer Query | `0x00` | Mirrors 0x0E config |
-| `0x6A` | Firmware Version | `0x01` | 20-byte reply. Upstream reads bytes 14–15 as version ×100 (`0x0139` = 3.13, one heater). **Ours (2026-10-19) sends `FF FF` there**: `A4 55 03 00 03 01 01 03 00 BE 00 00 FF FF FF FF 55 5E 00 44`; layout not yet decoded |
+| `0x6A` | Firmware Version | `0x01` | 20-byte reply. Upstream reads bytes 14–15 as version ×100 (`0x0139` = 3.13, one heater). Ours is **3.80** (`01 7C`), but its first reply ~1.5 s after connecting had `FF FF` there (`A4 55 03 00 03 01 01 03 00 BE 00 00 FF FF FF FF 55 5E 00 44`), so the component retries every 30 s until it decodes |
 
 ## Status Query Response (0x0A) — 7 bytes
 

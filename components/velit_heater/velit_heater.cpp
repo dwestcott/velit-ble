@@ -86,10 +86,16 @@ void VelitHeater::loop() {
       this->last_command_ms_ = now;
       return;
     }
-    if (this->state_received_ && !this->firmware_requested_) {
+    // Right after connecting the heater can answer FFFF for the version, so
+    // retry every 30 s (max 5 tries per connection) until it decodes.
+    bool retry_due = this->firmware_version_.empty() && this->firmware_tries_ < 5 &&
+                     (now - this->firmware_query_ms_) >= 30000;
+    if (this->state_received_ && (!this->firmware_requested_ || retry_due)) {
       ESP_LOGD(TAG, "Querying heater firmware version (0x6A)");
       this->send_command_(FUNC_FIRMWARE, (uint8_t) 0x01);
       this->firmware_requested_ = true;
+      this->firmware_tries_++;
+      this->firmware_query_ms_ = now;
       this->last_command_ms_ = now;
       return;
     }
@@ -129,8 +135,10 @@ void VelitHeater::gattc_event_handler(esp_gattc_cb_event_t event,
       this->notifications_enabled_ = false;
       this->clock_synced_ = false;
       this->state_received_ = false;
-      if (this->firmware_reply_.empty())
+      if (this->firmware_version_.empty()) {
         this->firmware_requested_ = false;
+        this->firmware_tries_ = 0;
+      }
       this->poll_phase_ = 2;
       break;
     }
@@ -352,7 +360,7 @@ void VelitHeater::handle_notification_(const uint8_t *data, uint16_t length) {
         this->firmware_version_ = buf;
         ESP_LOGI(TAG, "Heater firmware version: %s", buf);
       } else {
-        ESP_LOGW(TAG, "Firmware reply has no version at bytes 14-15; layout unknown");
+        ESP_LOGW(TAG, "Firmware reply has no version at bytes 14-15 (try %u)", this->firmware_tries_);
       }
       break;
     default:
