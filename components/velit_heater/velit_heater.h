@@ -159,6 +159,9 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   float get_fan_rpm() const;
   float get_altitude() const;
   bool is_fahrenheit() const { return fahrenheit_mode_; }
+  // Status bytes 5-6; meaning unconfirmed (protocol doc: watts, pump Hz x10)
+  uint8_t get_power_raw() const { return power_watts_; }
+  uint8_t get_pump_raw() const { return pump_freq_raw_; }
   // Heater controller firmware, e.g. "3.13"; empty until a 0x6A reply with a
   // decodable version arrives
   const std::string &get_firmware_version() const { return firmware_version_; }

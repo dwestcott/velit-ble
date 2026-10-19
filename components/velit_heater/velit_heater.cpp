@@ -322,7 +322,13 @@ void VelitHeater::handle_notification_(const uint8_t *data, uint16_t length) {
   const uint8_t *payload = &data[13];
   uint8_t payload_len = length - 13 - 2;  // Subtract header/prefix and 2-byte checksum
 
-  ESP_LOGD(TAG, "RX: func=0x%02X payload_len=%d", func, payload_len);
+  // Status/sensor payloads in hex so unconfirmed fields (fan RPM, power,
+  // pump frequency) can be checked against what the heater is doing
+  if (func == FUNC_QUERY_STATUS || func == FUNC_QUERY_SENSORS) {
+    ESP_LOGD(TAG, "RX: func=0x%02X %s", func, format_hex_pretty(payload, payload_len).c_str());
+  } else {
+    ESP_LOGD(TAG, "RX: func=0x%02X payload_len=%d", func, payload_len);
+  }
   ESP_LOGV(TAG, "RX raw: %s", format_hex_pretty(data, length).c_str());
 
   switch (func) {
