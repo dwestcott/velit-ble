@@ -159,8 +159,11 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   float get_fan_rpm() const;
   float get_altitude() const;
   bool is_fahrenheit() const { return fahrenheit_mode_; }
-  // Heater controller firmware, e.g. "3.13"; empty until the 0x6A reply arrives
+  // Heater controller firmware, e.g. "3.13"; empty until a 0x6A reply with a
+  // decodable version arrives
   const std::string &get_firmware_version() const { return firmware_version_; }
+  // Raw 0x6A reply payload as hex; empty until it arrives
+  const std::string &get_firmware_reply() const { return firmware_reply_; }
 
  protected:
   // Build and send a command frame
@@ -196,6 +199,7 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   bool clock_synced_{false};
   bool firmware_requested_{false};
   std::string firmware_version_;
+  std::string firmware_reply_;
 
   // Polling state
   uint8_t poll_phase_{2};  // 2 = idle; update() resets to 0 to start a cycle

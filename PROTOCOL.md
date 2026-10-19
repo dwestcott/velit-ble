@@ -157,7 +157,7 @@ than a hold gesture.
 | `0x0A` | Status Query | `0x00` | 7 bytes |
 | `0x0B` | Sensor Query | `0x00` | 13 bytes |
 | `0x0F` | Timer Query | `0x00` | Mirrors 0x0E config |
-| `0x6A` | Firmware Version | `0x01` | Reply payload bytes 14–15 = big-endian version ×100 (`0x0139` = 3.13). Upstream confirmed on one heater (3.13); the full reply is logged at INFO |
+| `0x6A` | Firmware Version | `0x01` | 20-byte reply. Upstream reads bytes 14–15 as version ×100 (`0x0139` = 3.13, one heater). **Ours (2026-10-19) sends `FF FF` there**: `A4 55 03 00 03 01 01 03 00 BE 00 00 FF FF FF FF 55 5E 00 44`; layout not yet decoded |
 
 ## Status Query Response (0x0A) — 7 bytes
 
@@ -206,6 +206,10 @@ All 16-bit fields are big-endian. `0xFFFF` = sensor unavailable.
 - Enabled: 0x01 = on
 
 ## Clock Sync (0x10)
+
+With the corrected 2-byte checksum (v0.5.0) the heater answers with a 2-byte notification
+(content logged at DEBUG; meaning not yet known).
+
 
 Sent once at BLE connection to sync the heater's clock:
 ```

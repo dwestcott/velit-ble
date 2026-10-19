@@ -85,7 +85,7 @@ Use nRF Connect or check ESPHome BLE tracker logs. Velit devices advertise as `V
 | `Velit Heater State` | Text Sensor | Machine state (Standby/Normal/Cooling Down/etc.) |
 | `Velit Heater Ventilation Start/Stop` | Buttons | Fan without combustion |
 | `Velit Heater BLE Connected` | Binary Sensor | GATT connection status |
-| `Velit Heater Firmware` | Text Sensor | Heater controller firmware (func `0x6A`), e.g. `3.13` |
+| `Velit Heater Firmware` | Text Sensor | Heater controller firmware (func `0x6A`), e.g. `3.13`; the raw reply when the version bytes are `FFFF` (`get_firmware_reply()`) |
 
 Numeric getters (`get_voltage()`, `get_fan_rpm()`, `get_inlet_temp_c()`, `get_altitude()`)
 return `NAN` (HA: unknown) after 60 s without a valid reply, instead of the last value forever.

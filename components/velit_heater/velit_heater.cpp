@@ -129,7 +129,7 @@ void VelitHeater::gattc_event_handler(esp_gattc_cb_event_t event,
       this->notifications_enabled_ = false;
       this->clock_synced_ = false;
       this->state_received_ = false;
-      if (this->firmware_version_.empty())
+      if (this->firmware_reply_.empty())
         this->firmware_requested_ = false;
       this->poll_phase_ = 2;
       break;
@@ -284,7 +284,7 @@ bool VelitHeater::send_clock_sync_() {
 void VelitHeater::handle_notification_(const uint8_t *data, uint16_t length) {
   // Minimum: AA LEN [master 4B] [slave 4B] SF(2) FUNC DATA(1+) CHK(2)
   if (length < MIN_RESPONSE_LEN) {
-    ESP_LOGD(TAG, "Short notification (%d bytes), ignoring", length);
+    ESP_LOGD(TAG, "Short notification: %s", format_hex_pretty(data, length).c_str());
     return;
   }
 
@@ -342,14 +342,17 @@ void VelitHeater::handle_notification_(const uint8_t *data, uint16_t length) {
     case FUNC_FIRMWARE:
       // Full reply logged so other firmware (e.g. 6.x) layouts can be checked
       ESP_LOGI(TAG, "Firmware reply: %s", format_hex_pretty(payload, payload_len).c_str());
-      if (payload_len >= 16) {
+      this->firmware_reply_ = format_hex(payload, payload_len);
+      // Upstream reads bytes 14-15 (0x0139 = "3.13", one heater). Other heaters
+      // send FFFF there, so only decode a real value; the raw reply is kept.
+      if (payload_len >= 16 && ((payload[14] << 8) | payload[15]) != SENSOR_UNAVAILABLE) {
         uint16_t val = (payload[14] << 8) | payload[15];
         char buf[12];
         snprintf(buf, sizeof(buf), "%u.%02u", val / 100, val % 100);
         this->firmware_version_ = buf;
         ESP_LOGI(TAG, "Heater firmware version: %s", buf);
       } else {
-        ESP_LOGW(TAG, "Firmware reply too short (%d bytes)", payload_len);
+        ESP_LOGW(TAG, "Firmware reply has no version at bytes 14-15; layout unknown");
       }
       break;
     default:
