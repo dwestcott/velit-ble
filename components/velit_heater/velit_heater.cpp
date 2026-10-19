@@ -1,4 +1,5 @@
 #include "velit_heater.h"
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
 #include <ctime>
@@ -25,15 +26,43 @@ void VelitHeater::dump_config() {
   ESP_LOGCONFIG(TAG, "Velit Heater BLE Controller:");
   ESP_LOGCONFIG(TAG, "  Write Handle: 0x%04X", this->write_handle_);
   ESP_LOGCONFIG(TAG, "  Notify Handle: 0x%04X", this->notify_handle_);
+  ESP_LOGCONFIG(TAG, "  Idle poll interval: %u ms", (unsigned) this->idle_interval_ms_);
+  if (!this->firmware_version_.empty())
+    ESP_LOGCONFIG(TAG, "  Heater firmware: %s", this->firmware_version_.c_str());
 }
 
 void VelitHeater::update() {
-  // Called by PollingComponent — kicks off a new poll cycle
-  if (!this->handles_discovered_ || !this->notifications_enabled_)
+  // Called by PollingComponent every update_interval — kicks off a poll cycle,
+  // except in settled states, which only poll every idle_interval. Overtemp
+  // Standby is the thermostat idling at setpoint (can last 40+ min); polling
+  // it every 5 s coincided with missed replies upstream (velit-hass 1bdae6e).
+  if (!this->is_connected())
+    return;
+  uint32_t now = millis();
+  bool settled = this->state_received_ &&
+                 (this->machine_state_ == STATE_STANDBY ||
+                  this->machine_state_ == STATE_NORMAL ||
+                  this->machine_state_ == STATE_OVERTEMP);
+  bool recent_command = this->last_user_command_ms_ != 0 &&
+                        (now - this->last_user_command_ms_) < FAST_POLL_AFTER_COMMAND_MS;
+  // 500 ms slack so scheduler jitter doesn't push a 15 s cycle to 20 s
+  if (settled && !recent_command && this->last_cycle_ms_ != 0 &&
+      (now - this->last_cycle_ms_) + 500 < this->idle_interval_ms_)
     return;
   this->poll_phase_ = 0;
   this->last_poll_ms_ = 0;
+  this->last_cycle_ms_ = now;
 }
+
+bool VelitHeater::has_fresh_data() const {
+  // Survives a brief BLE reconnect; only a minute without replies goes stale
+  return this->last_valid_rx_ms_ != 0 &&
+         (millis() - this->last_valid_rx_ms_) < STALE_TIMEOUT_MS;
+}
+
+float VelitHeater::get_voltage() const { return this->has_fresh_data() ? this->voltage_ : NAN; }
+float VelitHeater::get_fan_rpm() const { return this->has_fresh_data() ? this->fan_rpm_ : NAN; }
+float VelitHeater::get_altitude() const { return this->has_fresh_data() ? this->altitude_ : NAN; }
 
 void VelitHeater::loop() {
   uint32_t now = millis();
@@ -46,6 +75,31 @@ void VelitHeater::loop() {
     this->command_queue_.erase(this->command_queue_.begin());
     this->last_command_ms_ = now;
     return;
+  }
+
+  // Housekeeping once per connection, between poll cycles: clock sync as soon
+  // as time is available, then the firmware query after the first status.
+  if (this->is_connected() && this->poll_phase_ >= 2 &&
+      (now - this->last_command_ms_) >= COMMAND_THROTTLE_MS) {
+    if (!this->clock_synced_ && (now - this->last_poll_ms_) >= POLL_INTERVAL_MS) {
+      this->clock_synced_ = this->send_clock_sync_();
+      this->last_command_ms_ = now;
+      return;
+    }
+    if (this->state_received_ && !this->firmware_requested_) {
+      ESP_LOGD(TAG, "Querying heater firmware version (0x6A)");
+      this->send_command_(FUNC_FIRMWARE, (uint8_t) 0x01);
+      this->firmware_requested_ = true;
+      this->last_command_ms_ = now;
+      return;
+    }
+  }
+
+  // Stale data: republish so the climate entity drops its current temperature
+  if (this->last_valid_rx_ms_ != 0 && !this->has_fresh_data() && this->climate_ != nullptr &&
+      !std::isnan(this->climate_->current_temperature)) {
+    ESP_LOGW(TAG, "No valid reply for %u s, marking data stale", (unsigned) (STALE_TIMEOUT_MS / 1000));
+    this->publish_state_();
   }
 
   // Poll cycle: query status (0x0A) then sensors (0x0B)
@@ -75,6 +129,9 @@ void VelitHeater::gattc_event_handler(esp_gattc_cb_event_t event,
       this->notifications_enabled_ = false;
       this->clock_synced_ = false;
       this->state_received_ = false;
+      if (this->firmware_version_.empty())
+        this->firmware_requested_ = false;
+      this->poll_phase_ = 2;
       break;
     }
 
@@ -112,15 +169,10 @@ void VelitHeater::gattc_event_handler(esp_gattc_cb_event_t event,
         this->notifications_enabled_ = true;
         ESP_LOGI(TAG, "Notifications enabled");
 
-        // Send clock sync on first connection
-        if (!this->clock_synced_) {
-          this->send_clock_sync_();
-          this->clock_synced_ = true;
-        }
-
-        // Kick off first poll
+        // Kick off first poll; loop() sends the clock sync once time is valid
         this->poll_phase_ = 0;
         this->last_poll_ms_ = 0;
+        this->last_cycle_ms_ = millis();
       } else {
         ESP_LOGE(TAG, "Notification registration failed: %d", param->reg_for_notify.status);
       }
@@ -147,8 +199,12 @@ void VelitHeater::send_command_(uint8_t func, const uint8_t *data, uint8_t data_
     return;
   }
 
-  // Frame: 55 LEN [master 4B] [slave 4B] FUNC [data N] CHK
-  uint8_t payload_len = 4 + 4 + 1 + data_len + 1;  // master+slave+func+data+chk
+  // Frame: 55 LEN [master 4B] [slave 4B] FUNC [data N] CHK(2B)
+  // Same 2-byte big-endian checksum as responses (velit-hass heater_client.py).
+  // Until v0.5.0 this sent a 1-byte checksum with data padded to [value, 0x00];
+  // the pad sat where the checksum high byte belongs, so single-value frames
+  // were byte-identical (sum < 256) but the 7-byte clock sync was malformed.
+  uint8_t payload_len = 4 + 4 + 1 + data_len + 2;  // master+slave+func+data+chk
   uint8_t frame_len = 2 + payload_len;  // header + len byte + payload
   std::vector<uint8_t> frame(frame_len);
 
@@ -166,14 +222,15 @@ void VelitHeater::send_command_(uint8_t func, const uint8_t *data, uint8_t data_
     memcpy(&frame[11], data, data_len);
   }
 
-  // Checksum: sum of all bytes before checksum, & 0xFF
-  uint8_t checksum = 0;
-  for (int i = 0; i < frame_len - 1; i++) {
+  // Checksum: sum of all bytes before it, & 0xFFFF, high byte first
+  uint16_t checksum = 0;
+  for (int i = 0; i < frame_len - 2; i++) {
     checksum += frame[i];
   }
-  frame[frame_len - 1] = checksum;
+  frame[frame_len - 2] = checksum >> 8;
+  frame[frame_len - 1] = checksum & 0xFF;
 
-  ESP_LOGD(TAG, "TX: func=0x%02X data_len=%d chk=0x%02X", func, data_len, checksum);
+  ESP_LOGD(TAG, "TX: func=0x%02X data_len=%d chk=0x%04X", func, data_len, checksum);
 
   auto status = esp_ble_gattc_write_char(
       this->parent_->get_gattc_if(),
@@ -190,18 +247,20 @@ void VelitHeater::send_command_(uint8_t func, const uint8_t *data, uint8_t data_
 }
 
 void VelitHeater::send_command_(uint8_t func, uint8_t value) {
-  // Velit protocol requires 2-byte data field: [value, 0x00]
-  uint8_t data[2] = {value, 0x00};
-  send_command_(func, data, 2);
+  send_command_(func, &value, 1);
 }
 
-void VelitHeater::send_clock_sync_() {
+void VelitHeater::queue_command_(uint8_t func, uint8_t value) {
+  this->command_queue_.push_back({func, {value}});
+  this->last_user_command_ms_ = millis();
+}
+
+bool VelitHeater::send_clock_sync_() {
   time_t now_ts = time(nullptr);
   struct tm *t = localtime(&now_ts);
 
   if (t == nullptr || t->tm_year < 100) {
-    ESP_LOGW(TAG, "Clock not available, skipping sync");
-    return;
+    return false;  // no time from HA yet; loop() retries
   }
 
   uint8_t data[7];
@@ -217,6 +276,7 @@ void VelitHeater::send_clock_sync_() {
            data[0], data[1], data[2], data[3] + 2000, data[4], data[5]);
 
   send_command_(FUNC_CLOCK_SYNC, data, 7);
+  return true;
 }
 
 // ---- Response parsing ----
@@ -255,6 +315,7 @@ void VelitHeater::handle_notification_(const uint8_t *data, uint16_t length) {
   uint8_t payload_len = length - 13 - 2;  // Subtract header/prefix and 2-byte checksum
 
   ESP_LOGD(TAG, "RX: func=0x%02X payload_len=%d", func, payload_len);
+  ESP_LOGV(TAG, "RX raw: %s", format_hex_pretty(data, length).c_str());
 
   switch (func) {
     case FUNC_QUERY_STATUS:
@@ -278,8 +339,23 @@ void VelitHeater::handle_notification_(const uint8_t *data, uint16_t length) {
     case FUNC_SET_TEMP:
       ESP_LOGI(TAG, "Temp set acknowledged: %d", payload_len > 0 ? payload[0] : 0);
       break;
+    case FUNC_FIRMWARE:
+      // Full reply logged so other firmware (e.g. 6.x) layouts can be checked
+      ESP_LOGI(TAG, "Firmware reply: %s", format_hex_pretty(payload, payload_len).c_str());
+      if (payload_len >= 16) {
+        uint16_t val = (payload[14] << 8) | payload[15];
+        char buf[12];
+        snprintf(buf, sizeof(buf), "%u.%02u", val / 100, val % 100);
+        this->firmware_version_ = buf;
+        ESP_LOGI(TAG, "Heater firmware version: %s", buf);
+      } else {
+        ESP_LOGW(TAG, "Firmware reply too short (%d bytes)", payload_len);
+      }
+      break;
     default:
-      ESP_LOGD(TAG, "Response for func 0x%02X", func);
+      // Unrecognised function: log the payload for protocol discovery
+      ESP_LOGD(TAG, "Response for func 0x%02X: %s", func,
+               format_hex_pretty(payload, payload_len).c_str());
       break;
   }
 }
@@ -297,7 +373,7 @@ void VelitHeater::parse_status_(const uint8_t *data, uint8_t len) {
   if (fault != this->fault_code_) {
     this->fault_code_ = fault;
     changed = true;
-    const char *name = (fault < FAULT_NAME_COUNT) ? FAULT_NAMES[fault] : "Unknown";
+    const char *name = (fault < FAULT_NAME_COUNT) ? FAULT_NAMES[fault] : "unmapped";
     ESP_LOGI(TAG, "Fault: %d (%s)", fault, name);
   }
 
@@ -333,7 +409,7 @@ void VelitHeater::parse_status_(const uint8_t *data, uint8_t len) {
   if (state != this->machine_state_) {
     this->machine_state_ = state;
     changed = true;
-    const char *name = (state < STATE_NAME_COUNT) ? STATE_NAMES[state] : "Unknown";
+    const char *name = (state < STATE_NAME_COUNT) ? STATE_NAMES[state] : "unmapped";
     ESP_LOGI(TAG, "State: %d (%s)", state, name);
   }
 
@@ -341,6 +417,7 @@ void VelitHeater::parse_status_(const uint8_t *data, uint8_t len) {
   this->pump_freq_raw_ = data[6];
 
   this->state_received_ = true;
+  this->last_valid_rx_ms_ = millis();
 
   if (changed) {
     this->publish_state_();
@@ -349,102 +426,106 @@ void VelitHeater::parse_status_(const uint8_t *data, uint8_t len) {
 
 void VelitHeater::parse_sensors_(const uint8_t *data, uint8_t len) {
   // [fault][voltage 2B][rpm 2B][inlet 2B][casing 2B][outlet 2B][altitude 2B]
+  // 0xFFFF in any 16-bit field = sensor unavailable; the last value is held.
   if (len < 13) {
     ESP_LOGW(TAG, "Sensor response too short: %d bytes", len);
     return;
   }
 
   // Fault code (same as status)
-  uint8_t fault = data[0];
-  if (fault != this->fault_code_) {
-    this->fault_code_ = fault;
-  }
+  this->fault_code_ = data[0];
 
   // Voltage: ÷10 for Volts
   uint16_t volt_raw = (data[1] << 8) | data[2];
-  this->voltage_ = volt_raw / 10.0f;
+  if (volt_raw != SENSOR_UNAVAILABLE)
+    this->voltage_ = volt_raw / 10.0f;
 
   // Fan RPM
   uint16_t rpm = (data[3] << 8) | data[4];
-  this->fan_rpm_ = (rpm != SENSOR_UNAVAILABLE) ? rpm : 0;
+  if (rpm != SENSOR_UNAVAILABLE)
+    this->fan_rpm_ = rpm;
 
-  // Temperatures: raw - 60 = °F (in Fahrenheit mode)
+  // Inlet (room) temperature; casing/outlet aren't exposed
   uint16_t inlet_raw = (data[5] << 8) | data[6];
-  uint16_t casing_raw = (data[7] << 8) | data[8];
-  uint16_t outlet_raw = (data[9] << 8) | data[10];
+  if (inlet_raw != SENSOR_UNAVAILABLE)
+    this->inlet_temp_c_ = this->raw_temp_to_c_(inlet_raw);
 
-  if (inlet_raw != SENSOR_UNAVAILABLE) {
-    this->inlet_temp_f_ = static_cast<float>(inlet_raw) - 60.0f;
-  }
-  if (casing_raw != SENSOR_UNAVAILABLE) {
-    this->casing_temp_f_ = static_cast<float>(casing_raw) - 60.0f;
-  }
-  if (outlet_raw != SENSOR_UNAVAILABLE) {
-    this->outlet_temp_f_ = static_cast<float>(outlet_raw) - 60.0f;
-  }
-
-  // Altitude
+  // Altitude in the heater's unit (ft in °F mode, m in °C mode)
   uint16_t alt = (data[11] << 8) | data[12];
-  if (alt != SENSOR_UNAVAILABLE) {
+  uint16_t max_alt = this->fahrenheit_mode_ ? MAX_ALTITUDE_FT : MAX_ALTITUDE_M;
+  if (alt != SENSOR_UNAVAILABLE && alt <= max_alt) {
     this->altitude_ = alt;
+  } else if (alt != SENSOR_UNAVAILABLE) {
+    ESP_LOGD(TAG, "Ignoring implausible altitude %u", alt);
   }
 
   this->sensors_valid_ = true;
+  this->last_valid_rx_ms_ = millis();
 
-  // Publish sensor entities
-  if (this->voltage_sensor_ != nullptr)
-    this->voltage_sensor_->publish_state(this->voltage_);
-  if (this->fan_rpm_sensor_ != nullptr && rpm != SENSOR_UNAVAILABLE)
-    this->fan_rpm_sensor_->publish_state(this->fan_rpm_);
-  if (this->inlet_temp_sensor_ != nullptr && inlet_raw != SENSOR_UNAVAILABLE)
-    this->inlet_temp_sensor_->publish_state(this->get_inlet_temp_c());
-  if (this->outlet_temp_sensor_ != nullptr && outlet_raw != SENSOR_UNAVAILABLE) {
-    float outlet_c = (this->outlet_temp_f_ - 32.0f) * 5.0f / 9.0f;
-    this->outlet_temp_sensor_->publish_state(outlet_c);
-  }
-  if (this->altitude_sensor_ != nullptr && alt != SENSOR_UNAVAILABLE)
-    this->altitude_sensor_->publish_state(this->altitude_);
-
-  // Update climate entity current temp
+  // Climate entity current temp (publish_state_ skips it if nothing changed)
   this->publish_state_();
 }
 
+float VelitHeater::raw_temp_to_c_(uint16_t raw) const {
+  // Protocol offsets: raw - 60 = °F, raw - 50 = °C
+  if (this->fahrenheit_mode_)
+    return (static_cast<float>(raw) - 60.0f - 32.0f) * 5.0f / 9.0f;
+  return static_cast<float>(raw) - 50.0f;
+}
+
 float VelitHeater::get_inlet_temp_c() const {
-  return (this->inlet_temp_f_ - 32.0f) * 5.0f / 9.0f;
+  return this->has_fresh_data() ? this->inlet_temp_c_ : NAN;
 }
 
 void VelitHeater::publish_state_() {
   if (this->climate_ == nullptr) return;
 
-  // Mode mapping
-  if (this->machine_state_ == STATE_STANDBY && this->fault_code_ == 0 &&
-      !this->is_running()) {
-    this->climate_->mode = climate::CLIMATE_MODE_OFF;
-  } else if (this->work_mode_ == MODE_THERMOSTAT) {
-    this->climate_->mode = climate::CLIMATE_MODE_HEAT;
-    this->climate_->preset = climate::CLIMATE_PRESET_HOME;  // "Thermostat"
+  bool fresh = this->has_fresh_data();
+  bool fault = this->fault_code_ != 0;
+  uint8_t st = this->machine_state_;
+
+  // Mode: OFF when idle, cooling down after shutdown, or faulted
+  climate::ClimateMode mode =
+      (fault || st == STATE_STANDBY || st == STATE_COOLING_DOWN)
+          ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+
+  // Action: what the heater is doing right now
+  climate::ClimateAction action;
+  if (fault || st == STATE_STANDBY) {
+    action = climate::CLIMATE_ACTION_OFF;
+  } else if (st == STATE_NORMAL || st == STATE_CLEANING) {
+    action = climate::CLIMATE_ACTION_HEATING;
+  } else if (st == STATE_COOLING_DOWN) {
+    action = climate::CLIMATE_ACTION_FAN;
   } else {
-    this->climate_->mode = climate::CLIMATE_MODE_HEAT;
-    this->climate_->preset = climate::CLIMATE_PRESET_NONE;  // "Manual"
+    action = climate::CLIMATE_ACTION_IDLE;  // Overtemp Standby, Clean Complete
   }
 
-  // If in fault state, show as off
-  if (this->fault_code_ != 0) {
-    this->climate_->mode = climate::CLIMATE_MODE_OFF;
-  }
+  climate::ClimatePreset preset = (this->work_mode_ == MODE_THERMOSTAT)
+      ? climate::CLIMATE_PRESET_HOME    // "Thermostat"
+      : climate::CLIMATE_PRESET_NONE;   // "Manual"
 
-  // Target temperature (convert to °C for HA)
-  if (this->fahrenheit_mode_) {
-    this->climate_->target_temperature =
-        (static_cast<float>(this->set_temp_raw_) - 32.0f) * 5.0f / 9.0f;
-  } else {
-    this->climate_->target_temperature = static_cast<float>(this->set_temp_raw_);
-  }
+  float target = this->fahrenheit_mode_
+      ? (static_cast<float>(this->set_temp_raw_) - 32.0f) * 5.0f / 9.0f
+      : static_cast<float>(this->set_temp_raw_);
+  float current = (fresh && this->sensors_valid_) ? this->inlet_temp_c_ : NAN;
 
-  // Current temperature from inlet sensor
-  if (this->sensors_valid_) {
-    this->climate_->current_temperature = this->get_inlet_temp_c();
-  }
+  // Skip the publish if nothing HA shows has changed (was every poll)
+  auto same = [](float a, float b) {
+    return (std::isnan(a) && std::isnan(b)) || a == b;
+  };
+  if (this->published_once_ && this->climate_->mode == mode &&
+      this->climate_->action == action && this->climate_->preset == preset &&
+      same(this->climate_->target_temperature, target) &&
+      same(this->climate_->current_temperature, current) &&
+      this->published_gear_ == this->current_gear_)
+    return;
+
+  this->climate_->mode = mode;
+  this->climate_->action = action;
+  this->climate_->preset = preset;
+  this->climate_->target_temperature = target;
+  this->climate_->current_temperature = current;
 
   // Fan mode (gear)
   switch (this->current_gear_) {
@@ -455,76 +536,83 @@ void VelitHeater::publish_state_() {
     case 5: this->climate_->set_custom_fan_mode_("5"); break;
     default: break;
   }
+  this->published_gear_ = this->current_gear_;
+  this->published_once_ = true;
 
   this->climate_->publish_state();
-
-  // Text sensors
-  if (this->fault_sensor_ != nullptr) {
-    const char *name = (this->fault_code_ < FAULT_NAME_COUNT)
-        ? FAULT_NAMES[this->fault_code_] : "Unknown";
-    this->fault_sensor_->publish_state(name);
-  }
-  if (this->state_sensor_ != nullptr) {
-    const char *name = (this->machine_state_ < STATE_NAME_COUNT)
-        ? STATE_NAMES[this->machine_state_] : "Unknown";
-    this->state_sensor_->publish_state(name);
-  }
 }
 
 // ---- Control methods ----
 
-void VelitHeater::startup_manual() {
-  ESP_LOGI(TAG, "Starting heater (manual mode)");
-  this->command_queue_.push_back({FUNC_STARTUP, {0x01, 0x00}});
+void VelitHeater::startup() {
+  // The startup data byte is the work mode; sending Manual (0x01) while the
+  // heater is in Thermostat mode switched it to Manual (velit-hass 4c30cd6).
+  uint8_t mode = (this->work_mode_ == MODE_THERMOSTAT) ? MODE_THERMOSTAT : MODE_MANUAL;
+  ESP_LOGI(TAG, "Starting heater (%s mode)", mode == MODE_THERMOSTAT ? "thermostat" : "manual");
+  this->queue_command_(FUNC_STARTUP, mode);
 }
+
+void VelitHeater::startup_manual() { this->startup(); }
 
 void VelitHeater::shutdown() {
   ESP_LOGI(TAG, "Shutting down heater");
-  this->command_queue_.push_back({FUNC_SHUTDOWN, {0x00, 0x00}});
+  this->queue_command_(FUNC_SHUTDOWN, 0x00);
 }
 
 void VelitHeater::set_mode(uint8_t mode) {
   ESP_LOGI(TAG, "Setting mode: %s", mode == MODE_THERMOSTAT ? "Thermostat" : "Manual");
-  this->command_queue_.push_back({FUNC_SET_MODE, {mode, 0x00}});
+  this->queue_command_(FUNC_SET_MODE, mode);
 }
 
 void VelitHeater::set_gear(uint8_t gear) {
   if (gear < 1) gear = 1;
   if (gear > 5) gear = 5;
   ESP_LOGI(TAG, "Setting gear: %d", gear);
-  this->command_queue_.push_back({FUNC_SET_GEAR, {gear, 0x00}});
+  this->queue_command_(FUNC_SET_GEAR, gear);
 }
 
 void VelitHeater::set_target_temp_f(uint8_t temp_f) {
   if (temp_f < HEATER_TEMP_MIN_F) temp_f = HEATER_TEMP_MIN_F;
   if (temp_f > HEATER_TEMP_MAX_F) temp_f = HEATER_TEMP_MAX_F;
   ESP_LOGI(TAG, "Setting target temp: %d°F", temp_f);
-  this->command_queue_.push_back({FUNC_SET_TEMP, {temp_f, 0x00}});
+  this->queue_command_(FUNC_SET_TEMP, temp_f);
+}
+
+void VelitHeater::set_target_temp_c(float temp_c) {
+  if (this->fahrenheit_mode_) {
+    this->set_target_temp_f(static_cast<uint8_t>(roundf((temp_c * 9.0f / 5.0f) + 32.0f)));
+    return;
+  }
+  float c = roundf(temp_c);
+  if (c < HEATER_TEMP_MIN_C) c = HEATER_TEMP_MIN_C;
+  if (c > HEATER_TEMP_MAX_C) c = HEATER_TEMP_MAX_C;
+  ESP_LOGI(TAG, "Setting target temp: %d°C", (int) c);
+  this->queue_command_(FUNC_SET_TEMP, static_cast<uint8_t>(c));
 }
 
 void VelitHeater::start_ventilation() {
   ESP_LOGI(TAG, "Starting ventilation");
-  this->command_queue_.push_back({FUNC_START_VENT, {0x00, 0x00}});
+  this->queue_command_(FUNC_START_VENT, 0x00);
 }
 
 void VelitHeater::stop_ventilation() {
   ESP_LOGI(TAG, "Stopping ventilation");
-  this->command_queue_.push_back({FUNC_STOP_VENT, {0x00, 0x00}});
+  this->queue_command_(FUNC_STOP_VENT, 0x00);
 }
 
 void VelitHeater::start_fuel_prime() {
   ESP_LOGI(TAG, "Starting fuel prime (30s auto-stop)");
-  this->command_queue_.push_back({FUNC_START_PRIME, {0x00, 0x00}});
+  this->queue_command_(FUNC_START_PRIME, 0x00);
 }
 
 void VelitHeater::stop_fuel_prime() {
   ESP_LOGI(TAG, "Stopping fuel prime");
-  this->command_queue_.push_back({FUNC_STOP_PRIME, {0x00, 0x00}});
+  this->queue_command_(FUNC_STOP_PRIME, 0x00);
 }
 
 void VelitHeater::start_cleaning() {
   ESP_LOGI(TAG, "Starting cleaning cycle (cannot be manually stopped)");
-  this->command_queue_.push_back({FUNC_CLEANING, {0x00, 0x00}});
+  this->queue_command_(FUNC_CLEANING, 0x00);
 }
 
 
@@ -539,7 +627,8 @@ void VelitHeaterClimate::dump_config() {
 climate::ClimateTraits VelitHeaterClimate::traits() {
   auto traits = climate::ClimateTraits();
 
-  traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
+  traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE |
+                           climate::CLIMATE_SUPPORTS_ACTION);
   traits.set_visual_min_temperature(HEATER_TEMP_MIN_C);
   traits.set_visual_max_temperature(HEATER_TEMP_MAX_C);
   traits.set_visual_temperature_step(1.0f);
@@ -571,7 +660,7 @@ void VelitHeaterClimate::control(const climate::ClimateCall &call) {
         this->parent_->shutdown();
         break;
       case climate::CLIMATE_MODE_HEAT:
-        this->parent_->startup_manual();
+        this->parent_->startup();
         break;
       case climate::CLIMATE_MODE_FAN_ONLY:
         this->parent_->start_ventilation();
@@ -596,9 +685,7 @@ void VelitHeaterClimate::control(const climate::ClimateCall &call) {
   }
 
   if (call.get_target_temperature().has_value()) {
-    float temp_c = *call.get_target_temperature();
-    uint8_t temp_f = static_cast<uint8_t>(roundf((temp_c * 9.0f / 5.0f) + 32.0f));
-    this->parent_->set_target_temp_f(temp_f);
+    this->parent_->set_target_temp_c(*call.get_target_temperature());
   }
 
   if (call.has_custom_fan_mode()) {

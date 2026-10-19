@@ -57,7 +57,12 @@ Use nRF Connect or check ESPHome BLE tracker logs. Velit devices advertise as `V
 - **Presets:** None (Manual), Home (Thermostat)
 - **Fan/Gear:** 1–5
 - **Temperature Range:** 4–37°C (40–99°F)
-- **Current Temperature:** Inlet sensor reading
+- **Current Temperature:** Inlet sensor reading; blank after 60 s without a valid reply
+- **Action:** Heating (Normal, Cleaning), Idle (Overtemp Standby), Fan (Cooling Down), Off
+- **Cooling Down** shows as Off (the burner is out; the fan is clearing heat)
+- **Heat** starts the heater in its current mode, so Thermostat stays Thermostat
+- **Polling:** `update_interval` (5 s) during transitions and for 60 s after a command;
+  `idle_interval` (default 15 s) in Standby / Normal / Overtemp Standby
 
 ### AC Supplementary Entities
 | Entity | Type | Description |
@@ -80,6 +85,11 @@ Use nRF Connect or check ESPHome BLE tracker logs. Velit devices advertise as `V
 | `Velit Heater State` | Text Sensor | Machine state (Standby/Normal/Cooling Down/etc.) |
 | `Velit Heater Ventilation Start/Stop` | Buttons | Fan without combustion |
 | `Velit Heater BLE Connected` | Binary Sensor | GATT connection status |
+| `Velit Heater Firmware` | Text Sensor | Heater controller firmware (func `0x6A`), e.g. `3.13` |
+
+Numeric getters (`get_voltage()`, `get_fan_rpm()`, `get_inlet_temp_c()`, `get_altitude()`)
+return `NAN` (HA: unknown) after 60 s without a valid reply, instead of the last value forever.
+`0xFFFF` "sensor unavailable" readings are skipped.
 
 ### Heater Fault Codes
 | Code | Fault | Code | Fault |

@@ -121,9 +121,15 @@ than a hold gesture.
 - **Master Address:** `00 00 00 01` (fixed, device ignores)
 - **Slave Address:** `00 00 00 2D` (fixed constant on all Velit heaters)
 - **`53 46`:** Manufacturer code "SF" (present in all responses)
-- **Data field:** Always **2 bytes** for single-value commands: `[value, 0x00]`. The device silently ignores commands with only 1 data byte.
-- **Write checksum:** 1 byte — `sum(all preceding bytes) & 0xFF`
-- **Response checksum:** 2 bytes — `sum(all preceding bytes) & 0xFFFF` (big-endian)
+- **Data field:** N bytes; single-value commands carry **1 byte**.
+- **Checksum (both directions):** 2 bytes, `sum(all preceding bytes) & 0xFFFF`, high byte first.
+  Matches JohnFreeborg/velit-hass `_heater_checksum`.
+- **Corrected 2026-10-19 (v0.5.0).** Earlier notes said single-value commands need a 2-byte
+  `[value, 0x00]` data field and a 1-byte checksum, and that 1-byte data is ignored. That was a
+  misdiagnosis: the short frames were missing the checksum **high byte**, and the `0x00` pad
+  happened to sit there. For every command we send, the sum is < 256, so old and new frames are
+  byte-identical (verified for all 113 command/value pairs). The 7-byte clock sync was the one
+  frame the old scheme got wrong (one byte short).
 
 ## Heater Function Codes
 
@@ -132,7 +138,7 @@ than a hold gesture.
 | Func | Name | Data | Notes |
 |------|------|------|-------|
 | `0x00` | Set Mode | `0x01`=Manual, `0x02`=Thermostat | |
-| `0x01` | Startup (Manual) | `0x01` | Powers on in manual mode |
+| `0x01` | Startup | `0x01`=Manual, `0x02`=Thermostat | Data byte is the work mode; sending `0x01` while in Thermostat switches to Manual |
 | `0x02` | Shutdown | `0x00` | Powers off |
 | `0x03` | Start Ventilation | `0x00` | Fan only, no combustion |
 | `0x04` | Stop Ventilation | `0x00` | |
@@ -151,6 +157,7 @@ than a hold gesture.
 | `0x0A` | Status Query | `0x00` | 7 bytes |
 | `0x0B` | Sensor Query | `0x00` | 13 bytes |
 | `0x0F` | Timer Query | `0x00` | Mirrors 0x0E config |
+| `0x6A` | Firmware Version | `0x01` | Reply payload bytes 14–15 = big-endian version ×100 (`0x0139` = 3.13). Upstream confirmed on one heater (3.13); the full reply is logged at INFO |
 
 ## Status Query Response (0x0A) — 7 bytes
 
@@ -184,7 +191,9 @@ All 16-bit fields are big-endian. `0xFFFF` = sensor unavailable.
 | 5-6 | Inlet Temp | °F mode: raw - 60 = °F |
 | 7-8 | Casing Temp | °F mode: raw - 60 = °F |
 | 9-10 | Outlet Temp | °F mode: raw - 60 = °F |
-| 11-12 | Altitude | ft or m depending on device unit |
+| 11-12 | Altitude | ft or m depending on device unit. Readings above 30000 ft / 9000 m are startup glitches; held at the last value |
+
+°C mode: temperatures are `raw - 50 = °C` (per velit-hass, verified on hardware there).
 
 ## Auto-Start Config (0x0E)
 

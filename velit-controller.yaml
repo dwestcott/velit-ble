@@ -178,6 +178,7 @@ velit_heater:
   id: velit_heater_controller
   ble_client_id: velit_heater_ble
   update_interval: 5s
+  idle_interval: 15s
 
 # =============================================================================
 # SENSORS

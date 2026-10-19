@@ -6,6 +6,8 @@
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 
+#include <cmath>
+#include <string>
 #include <vector>
 
 namespace esphome {
@@ -44,6 +46,7 @@ static const uint8_t FUNC_QUERY_SENSORS  = 0x0B;
 static const uint8_t FUNC_AUTO_START_CFG = 0x0E;
 static const uint8_t FUNC_QUERY_TIMER    = 0x0F;
 static const uint8_t FUNC_CLOCK_SYNC     = 0x10;
+static const uint8_t FUNC_FIRMWARE       = 0x6A;  // data [0x01]; version at payload[14..15]
 
 // Mode values
 static const uint8_t MODE_MANUAL     = 0x01;
@@ -63,6 +66,17 @@ static const uint8_t HEATER_TEMP_MAX_F = 99;
 // Temperature limits (°C mode)
 static const float HEATER_TEMP_MIN_C = 4.0f;
 static const float HEATER_TEMP_MAX_C = 37.0f;
+
+// Plausible altitude ceilings (above Everest). Higher readings are startup
+// glitches; the last good value is held instead.
+static const uint16_t MAX_ALTITUDE_FT = 30000;
+static const uint16_t MAX_ALTITUDE_M = 9000;
+
+// No valid reply for this long = data is stale; getters return NAN so HA
+// shows the sensors as unknown instead of the last value forever.
+static const uint32_t STALE_TIMEOUT_MS = 60000;
+// Poll at the fast rate (update_interval) for this long after any command.
+static const uint32_t FAST_POLL_AFTER_COMMAND_MS = 60000;
 
 // Sensor unavailable marker
 static const uint16_t SENSOR_UNAVAILABLE = 0xFFFF;
@@ -113,20 +127,18 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
 
   // Entity setters (implemented in .cpp)
   void set_climate(VelitHeaterClimate *climate);
-  void set_voltage_sensor(sensor::Sensor *s) { this->voltage_sensor_ = s; }
-  void set_fan_rpm_sensor(sensor::Sensor *s) { this->fan_rpm_sensor_ = s; }
-  void set_inlet_temp_sensor(sensor::Sensor *s) { this->inlet_temp_sensor_ = s; }
-  void set_outlet_temp_sensor(sensor::Sensor *s) { this->outlet_temp_sensor_ = s; }
-  void set_altitude_sensor(sensor::Sensor *s) { this->altitude_sensor_ = s; }
-  void set_fault_sensor(text_sensor::TextSensor *s) { this->fault_sensor_ = s; }
-  void set_state_sensor(text_sensor::TextSensor *s) { this->state_sensor_ = s; }
+  // Settled states (Standby, Normal, Overtemp Standby) poll at this slower
+  // rate; transitions and the minute after a command use update_interval.
+  void set_idle_interval(uint32_t ms) { this->idle_interval_ms_ = ms; }
 
   // Control methods
-  void startup_manual();
+  void startup();         // starts in the heater's current mode (Manual/Thermostat)
+  void startup_manual();  // kept for existing YAML lambdas; same as startup()
   void shutdown();
   void set_mode(uint8_t mode);
   void set_gear(uint8_t gear);
   void set_target_temp_f(uint8_t temp_f);
+  void set_target_temp_c(float temp_c);  // converts to the heater's unit
   void start_ventilation();
   void stop_ventilation();
   void start_fuel_prime();
@@ -136,27 +148,32 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   // State getters
   bool is_connected() const { return this->handles_discovered_ && this->notifications_enabled_; }
   bool is_running() const { return machine_state_ == STATE_NORMAL; }
+  bool has_fresh_data() const;
   uint8_t get_mode() const { return work_mode_; }
   uint8_t get_gear() const { return current_gear_; }
   uint8_t get_fault() const { return fault_code_; }
   uint8_t get_machine_state() const { return machine_state_; }
+  // Numeric getters return NAN when the data is stale (see STALE_TIMEOUT_MS)
   float get_inlet_temp_c() const;
-  float get_voltage() const { return voltage_; }
-  uint16_t get_fan_rpm() const { return fan_rpm_; }
-  uint16_t get_altitude() const { return altitude_; }
+  float get_voltage() const;
+  float get_fan_rpm() const;
+  float get_altitude() const;
+  bool is_fahrenheit() const { return fahrenheit_mode_; }
+  // Heater controller firmware, e.g. "3.13"; empty until the 0x6A reply arrives
+  const std::string &get_firmware_version() const { return firmware_version_; }
 
  protected:
   // Build and send a command frame
   void send_command_(uint8_t func, const uint8_t *data, uint8_t data_len);
 
-  // Convenience: send single-byte command
+  // Convenience: send a one-byte data command
   void send_command_(uint8_t func, uint8_t value);
 
   // Send a query
   void send_query_(uint8_t func) { send_command_(func, (uint8_t)0x00); }
 
   // Send clock sync on connect
-  void send_clock_sync_();
+  bool send_clock_sync_();
 
   // Parse notification response
   void handle_notification_(const uint8_t *data, uint16_t length);
@@ -165,8 +182,11 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   void parse_status_(const uint8_t *data, uint8_t len);   // func 0x0A
   void parse_sensors_(const uint8_t *data, uint8_t len);   // func 0x0B
 
-  // Publish state to HA entities
+  // Publish the climate entity (only when something HA shows has changed)
   void publish_state_();
+
+  // Raw temperature reading -> °C, honouring the heater's unit
+  float raw_temp_to_c_(uint16_t raw) const;
 
   // BLE handles
   uint16_t write_handle_{0};
@@ -174,10 +194,15 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   bool handles_discovered_{false};
   bool notifications_enabled_{false};
   bool clock_synced_{false};
+  bool firmware_requested_{false};
+  std::string firmware_version_;
 
   // Polling state
-  uint8_t poll_phase_{0};
+  uint8_t poll_phase_{2};  // 2 = idle; update() resets to 0 to start a cycle
   uint32_t last_poll_ms_{0};
+  uint32_t last_cycle_ms_{0};
+  uint32_t last_valid_rx_ms_{0};
+  uint32_t idle_interval_ms_{15000};
   static const uint32_t POLL_INTERVAL_MS = 800;
 
   // Device state from Query 1 (0x0A)
@@ -189,29 +214,22 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   uint8_t power_watts_{0};
   uint8_t pump_freq_raw_{0};
 
-  // Sensor data from Query 2 (0x0B)
-  float voltage_{0.0f};
-  uint16_t fan_rpm_{0};
-  float inlet_temp_f_{0.0f};
-  float casing_temp_f_{0.0f};
-  float outlet_temp_f_{0.0f};
-  uint16_t altitude_{0};
+  // Sensor data from Query 2 (0x0B); NAN until first valid reading
+  float voltage_{NAN};
+  float fan_rpm_{NAN};
+  float inlet_temp_c_{NAN};
+  float altitude_{NAN};
   bool sensors_valid_{false};
 
   // Device uses Fahrenheit (detected from setpoint range)
   bool fahrenheit_mode_{true};
 
   bool state_received_{false};
+  bool published_once_{false};
+  uint8_t published_gear_{0};
 
   // Child entities
   VelitHeaterClimate *climate_{nullptr};
-  sensor::Sensor *voltage_sensor_{nullptr};
-  sensor::Sensor *fan_rpm_sensor_{nullptr};
-  sensor::Sensor *inlet_temp_sensor_{nullptr};
-  sensor::Sensor *outlet_temp_sensor_{nullptr};
-  sensor::Sensor *altitude_sensor_{nullptr};
-  text_sensor::TextSensor *fault_sensor_{nullptr};
-  text_sensor::TextSensor *state_sensor_{nullptr};
 
   // Command queue
   struct PendingCommand {
@@ -220,6 +238,8 @@ class VelitHeater : public PollingComponent, public ble_client::BLEClientNode {
   };
   std::vector<PendingCommand> command_queue_;
   uint32_t last_command_ms_{0};
+  uint32_t last_user_command_ms_{0};
+  void queue_command_(uint8_t func, uint8_t value);
   static const uint32_t COMMAND_THROTTLE_MS = 400;
 };
 
