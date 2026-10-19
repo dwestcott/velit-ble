@@ -140,7 +140,7 @@ than a hold gesture.
 | `0x00` | Set Mode | `0x01`=Manual, `0x02`=Thermostat | |
 | `0x01` | Startup | `0x01`=Manual, `0x02`=Thermostat | Data byte is the work mode; sending `0x01` while in Thermostat switches to Manual |
 | `0x02` | Shutdown | `0x00` | Powers off |
-| `0x03` | Start Ventilation | `0x00` | Fan only, no combustion |
+| `0x03` | Start Ventilation | `0x00` | Fan only, no combustion. ⚠ **From Standby it does nothing** (fw 3.80, 2026-10-19): acked with payload `01`, state stays 0, fan RPM 0, four tries. velit-hass removed it in April (4c4f642). Untested while the burner runs |
 | `0x04` | Stop Ventilation | `0x00` | |
 | `0x05` | Start Fuel Prime | `0x00` | 30s auto-stop |
 | `0x06` | Stop Fuel Prime | `0x00` | |
@@ -187,7 +187,7 @@ All 16-bit fields are big-endian. `0xFFFF` = sensor unavailable.
 |--------|-------|------------|
 | 0 | Fault Code | Same as 0x0A |
 | 1-2 | Supply Voltage | ÷10 for Volts (e.g., 0x0075 = 11.7V) |
-| 3-4 | Fan RPM | Direct value |
+| 3-4 | Fan RPM | Direct value. ⚠ Read **0 in every run** (HA history, 10 runs in Oct 2026, ~4.5 h in Normal); velit-hass dropped it as unpopulated. Pending a check against a live run with the hex payload logging (v0.5.3) |
 | 5-6 | Inlet Temp | °F mode: raw - 60 = °F |
 | 7-8 | Casing Temp | °F mode: raw - 60 = °F |
 | 9-10 | Outlet Temp | °F mode: raw - 60 = °F |
