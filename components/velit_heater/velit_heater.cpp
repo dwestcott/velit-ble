@@ -271,19 +271,21 @@ bool VelitHeater::send_clock_sync_() {
     return false;  // no time from HA yet; loop() retries
   }
 
-  uint8_t data[7];
+  // 6 bytes, local time, no day-of-week: exactly what the Velit app sends
+  // (capture 2026-10-21: 12 10 39 1a 0a 15 = 18:16:57 2026-10-21). The app
+  // gets no reply; our old 7-byte version drew a 2-byte reply (rejection).
+  uint8_t data[6];
   data[0] = t->tm_hour;
   data[1] = t->tm_min;
   data[2] = t->tm_sec;
   data[3] = t->tm_year - 100;  // Year since 2000
   data[4] = t->tm_mon + 1;     // Month 1-12
   data[5] = t->tm_mday;
-  data[6] = t->tm_wday;        // Day of week
 
   ESP_LOGI(TAG, "Clock sync: %02d:%02d:%02d %04d-%02d-%02d",
            data[0], data[1], data[2], data[3] + 2000, data[4], data[5]);
 
-  send_command_(FUNC_CLOCK_SYNC, data, 7);
+  send_command_(FUNC_CLOCK_SYNC, data, sizeof(data));
   return true;
 }
 

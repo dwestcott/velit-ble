@@ -211,9 +211,12 @@ With the corrected 2-byte checksum (v0.5.0) the heater answers with a 2-byte not
 (content logged at DEBUG; meaning not yet known).
 
 
-Sent once at BLE connection to sync the heater's clock:
+Sent once at BLE connection to sync the heater's clock. **6 bytes, local time, no
+day-of-week**, as the Velit app sends it (capture 2026-10-21: `12 10 39 1a 0a 15` =
+18:16:57 2026-10-21). The heater doesn't reply. (Until v0.5.5 we sent a 7th day-of-week byte
+and got a 2-byte reply, probably a rejection.)
 ```
-[HH] [MM] [SS] [YY] [MM] [DD] [DOW?]
+[HH] [MM] [SS] [YY] [MM] [DD]
 ```
 
 ## Fault Codes
