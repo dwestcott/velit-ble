@@ -1,5 +1,8 @@
 #include "velit_heater.h"
 #include "esphome/core/helpers.h"
+// ESPHome 2026.11 stopped including this from helpers.h; it holds the std::string
+// format_hex / format_hex_pretty used for the frame logs. Present since 2026.10.
+#include "esphome/core/alloc_helpers.h"
 #include "esphome/core/log.h"
 
 #include <ctime>
